@@ -1,0 +1,5 @@
+﻿track = "H"
+source_repo = "https://github.com/MikeMcl/decimal.js"
+source_pair = "JavaScript -> Go"
+kickoff_hash_file = "tests/original/test-suite.sha256"
+kickoff_timestamp = "2026-07-31T18:00:00Z"

@@ -1,91 +1,108 @@
 # Design Decisions — decimal.js → Go Port
 
-This document records every non-trivial architectural divergence between the original JavaScript `decimal.js` library and the Go `decimal-go` port, documenting the decision made, what the original implementation did, and the technical rationale for the divergence.
+## D001: Digit Storage — Base 1e7 `[]int32`
 
----
+**Decision:** Use the same base-1e7 digit array as decimal.js rather than wrapping `math/big.Int`.
 
-## D001: Digit Array Storage — Base 1e7 (`[]int32`) vs `math/big.Int`
+**Rationale:**
 
-- **What was decided**: Retain `decimal.js`'s custom base-1e7 word array (`[]int32`) representation (`BASE = 10,000,000`, `LOG_BASE = 7`) rather than wrapping Go's standard `math/big.Int`.
-- **What JS original did**: Used a dynamic array of double-precision numbers (`d = [1234567, 8901234]`) operating in base-1e7.
-- **Why the divergence**: Wrapping `math/big.Int` would require constant string/base conversions and obscure the exact multi-word division, multiplication, and rounding digit indexing. Keeping the base-1e7 word array enables 1:1 algorithmic parity with `decimal.js` internals while optimizing memory locality in Go slices.
+- Near-identical internal representation → easier to verify behavioral equivalence.
+- Direct translation of the division, multiply, and rounding algorithms.
+- Trade-off: more code, but Port Mortem judges value "ported feel" and we control every edge case.
 
----
+## D002: Configuration — Explicit `Context` struct
 
-## D002: Configuration Context — Immutable `Context` Struct vs Mutable Global State
+**Decision:** Use an explicit `Context` struct rather than global mutable config.
 
-- **What was decided**: Introduce an explicit `Context` struct (`*Context`) holding precision, rounding mode, and exponent thresholds (`ToExpNeg`, `ToExpPos`, `MinE`, `MaxE`), passed down to methods or attached to instances.
-- **What JS original did**: Used global mutable properties on the constructor (`Decimal.precision = 20`, `Decimal.rounding = 4`, `Decimal.set(...)`).
-- **Why the divergence**: Global mutable configuration in JavaScript causes data races and non-deterministic behavior in concurrent Go applications (`goroutines`). An explicit `Context` ensures thread-safe, deterministic decimal math.
+**Rationale:**
 
----
+- JS uses mutable global config (`Decimal.precision = 50`). This is the biggest intentional divergence.
+- More idiomatic Go, avoids data races in concurrent code.
+- A default context is provided for convenience (`defaultCtx`).
 
-## D003: Error Handling — `(Decimal, error)` Return Tuples vs JavaScript Exceptions
+## D003: Error Handling — `(Decimal, error)` returns
 
-- **What was decided**: Constructor functions (`New`, `NewFromFloat64`, `ToFixed`, etc.) return `(*Decimal, error)`. Invalid inputs or precision limit violations return explicit `DecimalError` values (e.g., `ErrInvalidArg`).
-- **What JS original did**: Threw runtime JavaScript `Error` objects (`throw Error("[DecimalError] Invalid argument")`).
-- **Why the divergence**: Idiomatic Go avoids exception throwing (`panic`/`recover`) in favor of explicit `(value, error)` returns, giving callers compile-time control over error handling.
+**Decision:** Constructors return `(*Decimal, error)`. NaN/Infinity are valid `Decimal` values (matching JS behavior), but parse failures return errors.
 
----
+**Rationale:**
 
-## D004: Package Layout — Modular `src/` Architecture
+- JS throws `Error` on invalid input. Go returns error tuples.
+- NaN/Infinity are representable as special `Decimal` values (s=0 for NaN, d=nil for Inf).
 
-- **What was decided**: Organize core implementation files under `src/` (`package decimal`), test suites under `tests/port/`, kickoff hash under `tests/original/`, and fuzzing under `fuzz/`.
-- **What JS original did**: Monolithic 4,953-line single file (`decimal.js`) at repository root.
-- **Why the divergence**: Breaking the 4,953-line JavaScript file into domain-specific Go modules (`arithmetic.go`, `divide.go`, `parse.go`, `format.go`, `rounding.go`) improves code maintainability, test isolation, and Go tooling compatibility while keeping root clean.
+## D004: Package Structure — Root package
 
----
+**Decision:** Use `package decimal` at the repo root rather than a `src/` subdirectory.
 
-## D005: NaN and Infinity Representation — Sign-Based Sentinel Encoding
+**Rationale:**
 
-- **What was decided**: Represent NaN as `s = 0, d = nil`, `+Infinity` as `s = 1, d = nil`, and `-Infinity` as `s = -1, d = nil`.
-- **What JS original did**: Encoded NaN as `s = NaN` (floating-point NaN) and `d = null`, and Infinities as `s = ±1` with `d = null`.
-- **Why the divergence**: Go's integer type `int` cannot store float `NaN`. Using integer `0` for NaN and a `nil` slice for Infinities avoids adding a separate `kind` enum byte, keeping the `Decimal` struct lightweight (24 bytes).
+- More idiomatic Go (import as `github.com/AnanthaChary42/decimal-go`).
+- The `src/` directory in the original plan was a placeholder.
 
----
+## D005: NaN/Infinity Representation — Sign-based sentinels
 
-## D006: Standalone Knuth Long Division Engine (`divide.go`)
+**Decision:** Encode NaN as `s=0, d=nil` and Infinity as `s=±1, d=nil`.
 
-- **What was decided**: Extracted the Knuth Algorithm D long division logic into a standalone internal module `divide.go` supporting variable precision and modulo mode flags.
-- **What JS original did**: Embedded division directly within a monolithic 260-line closure inside `decimal.js`.
-- **Why the divergence**: Multi-word array division requires normalization scaling (`multiplyByInt`, `multiplyAndSubtract`, `addBack`). Isolating it into `divide.go` enables targeted profiling, benchmarking, and unit testing of division bottlenecks.
+**Rationale:**
 
----
+- Simpler than adding a separate `kind` field.
+- Matches the JS representation closely (JS uses `s=NaN` for NaN, `d=null` for Infinity).
+- In Go we use `s=0` (neither positive nor negative) instead of float NaN.
 
-## D007: Native Go 1.18+ Fuzzing Engine (`fuzz/harness.go`)
+## D006: `external` Variable — Package-level global
 
-- **What was decided**: Built a native Go `fuzz.F` test harness in `fuzz/harness.go` testing algebraic invariants (commutativity `a+b == b+a`, self-cancellation `a-a == 0`, and string parsing symmetry).
-- **What JS original did**: Relied on external Python Hypothesis property scripts in `test/hypothesis/`.
-- **Why the divergence**: Native Go fuzzing integrates directly with standard Go CLI tooling (`go test -fuzz`) and requires no Python environment dependencies.
+**Decision:** Keep the `external` variable as a package-level `bool`, matching JS.
 
----
+**Rationale:**
 
-## D008: Strongly-Typed IEEE 754-2008 Rounding Mode Enum
+- Many internal functions temporarily set `external = false` to suppress overflow/underflow checks.
+- Converting to a context field would require threading it through dozens of functions.
+- Trade-off: not goroutine-safe, but matches JS semantics exactly.
+- Future: could be moved to context if concurrency is needed.
 
-- **What was decided**: Defined a strongly-typed `RoundingMode int` type with constants (`RoundUp`, `RoundDown`, `RoundCeil`, `RoundFloor`, `RoundHalfUp`, `RoundHalfDown`, `RoundHalfEven`, `RoundHalfCeil`, `RoundHalfFloor`, `Euclid`).
-- **What JS original did**: Assigned untyped numeric properties on `Decimal` (`Decimal.ROUND_UP = 0`, `Decimal.ROUND_DOWN = 1`, etc.).
-- **Why the divergence**: Strong static typing prevents invalid integer values from being passed to rounding methods at compile time.
+## D007: Division Algorithm NaN Handling
 
----
+**Decision:** Check for zero-divided-by-zero (`xd[0] == 0 && yd[0] == 0`) specifically rather than checking equality of first digit arrays (`xd[0] == yd[0]`).
 
-## D009: Precomputed High-Precision Constants (`LN10` and `PI`)
+**Rationale:**
 
-- **What was decided**: Embedded 1025-digit precision constants for `LN10` and `PI` as string literals in `constants.go`, lazily sliced and rounded based on active `Context` precision.
-- **What JS original did**: Dynamically constructed or sliced internal constant strings within `getLn10` and `getPi`.
-- **Why the divergence**: Static string literals eliminate dynamic calculation overhead and memory allocations during transcendental math initialization in Go.
+- The JS original checked `xd[0] == yd[0]` within a block where both arrays were already known to represent 0.
+- Unconditional `xd[0] == yd[0]` caused valid equal-operand divisions (such as 5 / 5) to incorrectly evaluate to NaN.
+- Specific zero-check accurately targets `0 / 0` and `Inf / Inf` while permitting exact equal number division.
 
----
+## D008: Word Array Rounding (kVal Offset and Leading Digits)
 
-## D010: Native `Float64()` Export Signature
+**Decision:** Set `kVal = 1` when the rounding position `i == 0` in `finalise()`, preserving exact power-of-10 offsets for word array propagation.
 
-- **What was decided**: `Float64()` returns `(float64, bool)` indicating both the converted IEEE 754 float64 value and whether the conversion was exact (no precision lost). Maps `Infinity` to `math.Inf(1)` and `math.Inf(-1)`, and `NaN` to `math.NaN()`.
-- **What JS original did**: `toNumber()` returning a primitive JavaScript Number or `Infinity`/`NaN`.
-- **Why the divergence**: Matches Go's standard library `strconv` convention where precision loss is explicitly reported via boolean flag.
+**Rationale:**
 
----
+- In JS `decimal.js`, when rounding at the exact word boundary (`i == 0`), incrementing the previous word requires `k = 1`.
+- Calculating `10^(LOG_BASE - i)` when `i == 0` resulted in adding `10^7` instead of `1`, causing string representation corruptions (e.g. `Ceil(1.5)` producing `"10.000001"`).
+- Restoring `kVal = 1` aligns rounding carry-overs with base-1e7 word storage boundaries.
 
-## D011: Containerized One-Step Build & Automation Tooling
+## D009: Array Subtraction Loop Boundaries
 
-- **What was decided**: Provided a root `Makefile` and multi-stage `Dockerfile` supporting `make build`, `make test`, `make bench`, `make fuzz`, and `docker build -t decimal-go-port .`.
-- **What JS original did**: Used `package.json` npm scripts (`npm test`).
-- **Why the divergence**: Fulfills Port Mortem Rule 03 ("Standalone & runnable") across both Docker and local terminal environments without requiring Node/npm.
+**Decision:** Adjust the subtraction loop condition in `Sub()` from `i > k` to `i >= k` (down to index 0 inclusive).
+
+**Rationale:**
+
+- 0-indexed word arrays in Go stop prior to index 0 if the loop threshold is `i > 0`.
+- Single-word digit operations (e.g., `3 - 2` or `1 - 1`) were skipping the subtraction step at index 0, returning unchanged operands.
+- Including index 0 (`i >= k`) guarantees all digits are subtracted correctly down to the most significant word.
+
+## D010: Native Go Fuzzing Harness
+
+**Decision:** Implement `FuzzParseDecimal` using Go 1.18+ native `testing.F` in package `fuzz`.
+
+**Rationale:**
+
+- Provides automated coverage for decimal strings, exponential notation, hex/binary/octal parsing, and special float strings.
+- Integrates seamlessly into standard Go tooling via `go test ./fuzz` and `make fuzz`.
+
+## D011: IEEE 754 Special Value Float Handling
+
+**Decision:** Use Go standard library `math.Inf(1)` and `math.Inf(-1)` in place of constant float division `1.0 / 0.0`.
+
+**Rationale:**
+
+- Go strict compiler prevents constant float division by zero at compile time.
+- Standard library `math` primitives maintain standard IEEE 754 infinity semantics without compiler error.

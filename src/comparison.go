@@ -1,128 +1,157 @@
 package decimal
 
 // Cmp compares x and y.
-// Returns:
-//   -1 if x < y
-//    0 if x == y
-//    1 if x > y
-//   (0, false) if x or y is NaN
-//
-// Equivalent to comparedTo in decimal.js.
+// Returns 1 if x > y, -1 if x < y, 0 if x == y.
+// Returns 0 and ok=false if either is NaN.
 func (x *Decimal) Cmp(y *Decimal) (int, bool) {
-	ctx := x.getContext()
-	y = ctx.newFromDecimal(y)
+	xd := x.d
+	yd := y.d
+	xs := x.s
+	ys := y.s
 
-	// NaN check.
-	if x.s == 0 || y.s == 0 {
-		return 0, false
-	}
-
-	// Sign comparison.
-	if x.s != y.s {
-		if x.IsZero() && y.IsZero() {
-			return 0, true
+	// Either NaN or ±Infinity?
+	if xd == nil || yd == nil {
+		if xs == 0 || ys == 0 {
+			return 0, false // NaN
 		}
-		if x.s > y.s {
+		if xs != ys {
+			return int(xs), true
+		}
+		// Both same sign, both non-finite.
+		xIsInf := xd == nil && xs != 0
+		yIsInf := yd == nil && ys != 0
+		if xIsInf && yIsInf {
+			return 0, true // same infinity
+		}
+		if xIsInf {
+			// x is ±Inf, y is finite
+			if xs < 0 {
+				return -1, true
+			}
+			return 1, true
+		}
+		// y is ±Inf, x is finite
+		if ys < 0 {
 			return 1, true
 		}
 		return -1, true
 	}
 
-	// Infinities.
-	if x.d == nil || y.d == nil {
-		if x.d == nil && y.d == nil {
-			return 0, true
+	// Either zero?
+	if xd[0] == 0 || yd[0] == 0 {
+		if xd[0] != 0 {
+			return int(xs), true
 		}
-		if x.d == nil {
-			return x.s, true
+		if yd[0] != 0 {
+			return -int(ys), true
 		}
-		return -y.s, true
+		return 0, true
 	}
 
-	// Exponent comparison.
+	// Signs differ?
+	if xs != ys {
+		return int(xs), true
+	}
+
+	// Compare exponents.
 	if x.e != y.e {
-		if (x.e > y.e) == (x.s > 0) {
+		if (x.e > y.e) != (xs < 0) {
 			return 1, true
 		}
 		return -1, true
 	}
 
-	// Digits comparison word by word.
-	kX := len(x.d)
-	kY := len(y.d)
-	minL := kX
-	if kY < minL {
-		minL = kY
-	}
+	xdL := len(xd)
+	ydL := len(yd)
 
-	for i := 0; i < minL; i++ {
-		if x.d[i] != y.d[i] {
-			if (x.d[i] > y.d[i]) == (x.s > 0) {
+	// Compare digit by digit.
+	j := xdL
+	if ydL < j {
+		j = ydL
+	}
+	for i := 0; i < j; i++ {
+		if xd[i] != yd[i] {
+			if (xd[i] > yd[i]) != (xs < 0) {
 				return 1, true
 			}
 			return -1, true
 		}
 	}
 
-	// If words match so far, longer array is larger in absolute value.
-	if kX != kY {
-		if (kX > kY) == (x.s > 0) {
-			return 1, true
-		}
-		return -1, true
+	// Compare lengths.
+	if xdL == ydL {
+		return 0, true
 	}
-
-	return 0, true
+	if (xdL > ydL) != (xs < 0) {
+		return 1, true
+	}
+	return -1, true
 }
 
-// Eq returns true if x == y.
+// CmpInt compares x and y, returning -1, 0, or 1.
+// Returns 0 for NaN comparisons (matching JS behavior where NaN comparisons
+// would return NaN, but we simplify to 0).
+func (x *Decimal) CmpInt(y *Decimal) int {
+	r, _ := x.Cmp(y)
+	return r
+}
+
+// Eq returns true if x equals y.
 func (x *Decimal) Eq(y *Decimal) bool {
-	cmp, ok := x.Cmp(y)
-	return ok && cmp == 0
+	r, ok := x.Cmp(y)
+	return ok && r == 0
 }
 
 // Gt returns true if x > y.
 func (x *Decimal) Gt(y *Decimal) bool {
-	cmp, ok := x.Cmp(y)
-	return ok && cmp > 0
+	r, ok := x.Cmp(y)
+	return ok && r > 0
 }
 
 // Gte returns true if x >= y.
 func (x *Decimal) Gte(y *Decimal) bool {
-	cmp, ok := x.Cmp(y)
-	return ok && cmp >= 0
+	r, ok := x.Cmp(y)
+	return ok && r >= 0
 }
 
 // Lt returns true if x < y.
 func (x *Decimal) Lt(y *Decimal) bool {
-	cmp, ok := x.Cmp(y)
-	return ok && cmp < 0
+	r, ok := x.Cmp(y)
+	return ok && r < 0
 }
 
 // Lte returns true if x <= y.
 func (x *Decimal) Lte(y *Decimal) bool {
-	cmp, ok := x.Cmp(y)
-	return ok && cmp <= 0
-}
-
-// Equals is an alias for Eq.
-func (x *Decimal) Equals(y *Decimal) bool {
-	return x.Eq(y)
-}
-
-// ComparedTo returns int matching decimal.js comparedTo (-1, 0, 1, or NaN handling).
-// Returns 0 if NaN for JS API compatibility.
-func (x *Decimal) ComparedTo(y *Decimal) int {
-	cmp, _ := x.Cmp(y)
-	return cmp
+	r, ok := x.Cmp(y)
+	return ok && r <= 0
 }
 
 // Clamp returns a new Decimal clamped to [min, max].
 func (x *Decimal) Clamp(min, max *Decimal) *Decimal {
-	if x.Lt(min) {
+	_, minOk := min.Cmp(min)
+	_, maxOk := max.Cmp(max)
+	if !minOk || !maxOk {
+		// NaN
+		d := x.copy()
+		d.s = 0
+		d.d = nil
+		return d
+	}
+
+	if min.Gt(max) {
+		// Invalid range — return NaN (JS throws).
+		d := x.copy()
+		d.s = 0
+		d.d = nil
+		return d
+	}
+
+	k, _ := x.Cmp(min)
+	if k < 0 {
 		return min.copy()
 	}
-	if x.Gt(max) {
+	k2, _ := x.Cmp(max)
+	if k2 > 0 {
 		return max.copy()
 	}
 	return x.copy()

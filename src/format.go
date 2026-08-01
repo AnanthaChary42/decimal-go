@@ -7,108 +7,121 @@ import (
 
 // finiteToString converts a finite Decimal to a string.
 // If isExp is true, uses exponential notation.
-// Equivalent to finiteToString in decimal.js.
-func finiteToString(x *Decimal, isExp bool) string {
-	ctx := x.getContext()
-
-	if x.d == nil {
-		if x.s == 0 {
-			return "NaN"
-		}
-		if x.s < 0 {
-			return "-Infinity"
-		}
-		return "Infinity"
+// sd is the number of digits to pad to (0 means no padding).
+func finiteToString(x *Decimal, isExp bool, sd int) string {
+	if !x.IsFinite() {
+		return nonFiniteToString(x)
 	}
 
+	e := x.e
 	str := digitsToStringExact(x.d)
+	strLen := len(str)
 
 	if isExp {
-		// Exponential notation.
-		var sb strings.Builder
-		if x.s < 0 {
-			sb.WriteByte('-')
+		if sd > 0 {
+			k := sd - strLen
+			if k > 0 {
+				if strLen > 1 {
+					str = string(str[0]) + "." + str[1:] + getZeroString(k)
+				} else {
+					str = string(str[0]) + "." + getZeroString(k)
+				}
+			} else if strLen > 1 {
+				str = string(str[0]) + "." + str[1:]
+			}
+		} else if strLen > 1 {
+			str = string(str[0]) + "." + str[1:]
 		}
-		sb.WriteByte(str[0])
-		if len(str) > 1 {
-			sb.WriteByte('.')
-			sb.WriteString(str[1:])
+
+		if e < 0 {
+			str = str + "e" + itoa(e)
+		} else {
+			str = str + "e+" + itoa(e)
 		}
-		sb.WriteByte('e')
-		e := x.e
-		if e >= 0 {
-			sb.WriteByte('+')
+	} else if e < 0 {
+		str = "0." + getZeroString(-e-1) + str
+		if sd > 0 {
+			k := sd - strLen
+			if k > 0 {
+				str += getZeroString(k)
+			}
 		}
-		sb.WriteString(itoa(e))
-		return sb.String()
+	} else if e >= strLen {
+		str += getZeroString(e + 1 - strLen)
+		if sd > 0 {
+			k := sd - e - 1
+			if k > 0 {
+				str = str + "." + getZeroString(k)
+			}
+		}
+	} else {
+		k := e + 1
+		if k < strLen {
+			str = str[:k] + "." + str[k:]
+		}
+		if sd > 0 {
+			k2 := sd - strLen
+			if k2 > 0 {
+				if e+1 == strLen {
+					str += "."
+				}
+				str += getZeroString(k2)
+			}
+		}
 	}
 
-	// Normal notation.
-	e := x.e
-	eIdx := e + 1
-	strL := len(str)
+	return str
+}
 
-	var sb strings.Builder
+// nonFiniteToString returns the string for NaN or ±Infinity.
+func nonFiniteToString(x *Decimal) string {
+	if x.s == 0 {
+		return "NaN"
+	}
 	if x.s < 0 {
-		sb.WriteByte('-')
+		return "-Infinity"
 	}
-
-	if e < 0 {
-		// Fraction less than 1.
-		sb.WriteString("0.")
-		k := -eIdx
-		if k > 0 {
-			sb.WriteString(getZeroString(k))
-		}
-		sb.WriteString(str)
-	} else if eIdx < strL {
-		// Decimal point in the middle.
-		sb.WriteString(str[:eIdx])
-		sb.WriteByte('.')
-		sb.WriteString(str[eIdx:])
-	} else {
-		// Integer with optional trailing zeros.
-		sb.WriteString(str)
-		k := eIdx - strL
-		if k > 0 {
-			sb.WriteString(getZeroString(k))
-		}
-	}
-
-	_ = ctx
-	return sb.String()
+	return "Infinity"
 }
 
-// String returns the string representation of x using default formatting.
-// Equivalent to Decimal.prototype.toString() in decimal.js.
+// String returns the string representation of x.
+// Implements fmt.Stringer.
+// Uses exponential notation when e <= toExpNeg or e >= toExpPos.
 func (x *Decimal) String() string {
-	ctx := x.getContext()
-
-	if x.d == nil {
-		if x.s == 0 {
-			return "NaN"
-		}
-		if x.s < 0 {
-			return "-Infinity"
-		}
-		return "Infinity"
+	if !x.IsFinite() {
+		return nonFiniteToString(x)
 	}
 
-	// Determine whether to use exponential notation.
-	e := x.e
-	isExp := e <= ctx.ToExpNeg || e >= ctx.ToExpPos
-	return finiteToString(x, isExp)
+	ctx := x.getContext()
+	str := finiteToString(x, x.e <= ctx.ToExpNeg || x.e >= ctx.ToExpPos, 0)
+
+	if x.IsNeg() && !x.IsZero() {
+		return "-" + str
+	}
+	return str
 }
 
-// ValueOf returns the string value, matching JS valueOf().
+// ValueOf returns a string representation where negative zero includes the minus sign.
+// Equivalent to valueOf/toJSON in decimal.js.
 func (x *Decimal) ValueOf() string {
-	return x.String()
+	if !x.IsFinite() {
+		return nonFiniteToString(x)
+	}
+
+	ctx := x.getContext()
+	str := finiteToString(x, x.e <= ctx.ToExpNeg || x.e >= ctx.ToExpPos, 0)
+
+	if x.IsNeg() {
+		return "-" + str
+	}
+	return str
 }
 
-// ToFixed returns a string representing x in normal (fixed-point) notation with dp decimal places.
-func (x *Decimal) ToFixed(dp int, rm ...RoundingMode) (string, error) {
-	if err := checkInt32(dp, 0, MAX_PRECISION); err != nil {
-		return "", err
+// ToFixed returns a string representing x in fixed-point notation,
+// rounded to dp decimal places using the specified rounding mode.
+func (x *Decimal) ToFixed(dp int, rm ...RoundingMode) string {
+	if !x.IsFinite() {
+		return nonFiniteToString(x)
 	}
 
 	ctx := x.getContext()
@@ -117,73 +130,30 @@ func (x *Decimal) ToFixed(dp int, rm ...RoundingMode) (string, error) {
 		rounding = rm[0]
 	}
 
-	r := finalise(x.copy(), dp+x.e+1, rounding)
-
-	if r.d == nil {
-		return r.String(), nil
-	}
-
-	str := finiteToString(r, false)
-
-	// Append trailing zeros if needed.
-	dotIdx := strings.IndexByte(str, '.')
-	if dotIdx < 0 {
-		if dp > 0 {
-			str += "." + getZeroString(dp)
-		}
+	var str string
+	if dp < 0 {
+		str = finiteToString(x, false, 0)
 	} else {
-		actualDp := len(str) - dotIdx - 1
-		if actualDp < dp {
-			str += getZeroString(dp - actualDp)
-		}
+		y := x.copy()
+		finalise(y, dp+y.e+1, rounding)
+		str = finiteToString(y, false, dp+y.e+1)
 	}
 
-	return str, nil
+	if x.IsNeg() && !x.IsZero() {
+		return "-" + str
+	}
+	return str
 }
 
-// ToExponential returns a string representing x in exponential notation with dp decimal places.
-func (x *Decimal) ToExponential(dp int, rm ...RoundingMode) (string, error) {
-	ctx := x.getContext()
-	rounding := ctx.Rounding
-	if len(rm) > 0 {
-		rounding = rm[0]
-	}
-
-	r := finalise(x.copy(), dp+1, rounding)
-
-	if r.d == nil {
-		return r.String(), nil
-	}
-
-	str := finiteToString(r, true)
-
-	// Format to exact dp decimal places.
-	if dp >= 0 {
-		eIdx := strings.IndexAny(str, "eE")
-		head := str[:eIdx]
-		tail := str[eIdx:]
-
-		dotIdx := strings.IndexByte(head, '.')
-		if dotIdx < 0 {
-			if dp > 0 {
-				head += "." + getZeroString(dp)
-			}
-		} else {
-			actualDp := len(head) - dotIdx - 1
-			if actualDp < dp {
-				head += getZeroString(dp - actualDp)
-			}
+// ToExponential returns a string in exponential notation,
+// rounded to dp decimal places using the specified rounding mode.
+func (x *Decimal) ToExponential(dp int, rm ...RoundingMode) string {
+	if !x.IsFinite() {
+		s := nonFiniteToString(x)
+		if x.IsNeg() && !x.IsZero() {
+			return "-" + s
 		}
-		str = head + tail
-	}
-
-	return str, nil
-}
-
-// ToPrecision returns a string representing x to sd significant digits.
-func (x *Decimal) ToPrecision(sd int, rm ...RoundingMode) (string, error) {
-	if err := checkInt32(sd, 1, MAX_PRECISION); err != nil {
-		return "", err
+		return s
 	}
 
 	ctx := x.getContext()
@@ -192,84 +162,142 @@ func (x *Decimal) ToPrecision(sd int, rm ...RoundingMode) (string, error) {
 		rounding = rm[0]
 	}
 
-	r := finalise(x.copy(), sd, rounding)
-
-	if r.d == nil {
-		return r.String(), nil
+	var str string
+	if dp < 0 {
+		str = finiteToString(x, true, 0)
+	} else {
+		y := x.copy()
+		finalise(y, dp+1, rounding)
+		str = finiteToString(y, true, dp+1)
 	}
 
-	e := r.e
-	isExp := e < ctx.ToExpNeg || e >= ctx.ToExpPos
-	return finiteToString(r, isExp), nil
+	if x.IsNeg() && !x.IsZero() {
+		return "-" + str
+	}
+	return str
 }
 
-// Float64 returns the float64 representation of x and whether the conversion was exact.
-func (x *Decimal) Float64() (float64, bool) {
-	if x.d == nil {
-		if x.s == 0 {
-			return math.NaN(), false
+// ToPrecision returns a string rounded to sd significant digits,
+// using exponential notation if sd is less than the integer part length.
+func (x *Decimal) ToPrecision(sd int, rm ...RoundingMode) string {
+	if !x.IsFinite() {
+		s := nonFiniteToString(x)
+		if x.IsNeg() && !x.IsZero() {
+			return "-" + s
 		}
-		if x.s < 0 {
-			return negInf(), false
-		}
-		return posInf(), false
+		return s
 	}
 
+	ctx := x.getContext()
+	rounding := ctx.Rounding
+	if len(rm) > 0 {
+		rounding = rm[0]
+	}
+
+	var str string
+	if sd <= 0 {
+		str = finiteToString(x, x.e <= ctx.ToExpNeg || x.e >= ctx.ToExpPos, 0)
+	} else {
+		y := x.copy()
+		finalise(y, sd, rounding)
+		str = finiteToString(y, sd <= y.e || y.e <= ctx.ToExpNeg, sd)
+	}
+
+	if x.IsNeg() && !x.IsZero() {
+		return "-" + str
+	}
+	return str
+}
+
+// ToNumber returns the float64 representation of x.
+func (x *Decimal) ToNumber() float64 {
+	if x.IsNaN() {
+		return 0 // Go doesn't have NaN as easily usable
+	}
 	s := x.String()
-	var f float64
-	exact, _ := parseFloat(s, &f)
-	return f, exact
+	f := 0.0
+	// Simple conversion via string.
+	// Use strings to number conversion.
+	_, _ = parseFloat(s, &f)
+	return f
 }
 
-// Helper: float64 conversion helper.
-func parseFloat(s string, out *float64) (bool, error) {
-	// Parse simple float string.
+// parseFloat is a simple string to float64 converter.
+func parseFloat(s string, f *float64) (bool, error) {
+	s = strings.TrimSpace(s)
+	val := 0.0
 	neg := false
-	if len(s) > 0 && s[0] == '-' {
+	i := 0
+
+	if i < len(s) && s[i] == '-' {
 		neg = true
-		s = s[1:]
+		i++
+	} else if i < len(s) && s[i] == '+' {
+		i++
 	}
 
-	var val float64
-	eIdx := strings.IndexAny(s, "eE")
-	if eIdx >= 0 {
-		// Exponential.
-		baseStr := s[:eIdx]
-		expVal := parseSimpleInt(s[eIdx+1:])
-		bVal := 0.0
-		parseFloat(baseStr, &bVal)
-		val = bVal * math.Pow(10, float64(expVal))
-	} else {
-		// Normal.
-		dotIdx := strings.IndexByte(s, '.')
-		if dotIdx >= 0 {
-			intPart := s[:dotIdx]
-			fracPart := s[dotIdx+1:]
+	if s == "Infinity" || s == "+Infinity" {
+		*f = posInf()
+		return true, nil
+	}
+	if s == "-Infinity" {
+		*f = negInf()
+		return true, nil
+	}
 
-			var intVal float64
-			for _, ch := range intPart {
-				intVal = intVal*10 + float64(ch-'0')
+	// Integer part.
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		val = val*10 + float64(s[i]-'0')
+		i++
+	}
+
+	// Fraction part.
+	if i < len(s) && s[i] == '.' {
+		i++
+		frac := 0.1
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			val += float64(s[i]-'0') * frac
+			frac /= 10
+			i++
+		}
+	}
+
+	// Exponent part.
+	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
+		i++
+		expNeg := false
+		if i < len(s) && s[i] == '-' {
+			expNeg = true
+			i++
+		} else if i < len(s) && s[i] == '+' {
+			i++
+		}
+		exp := 0
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			exp = exp*10 + int(s[i]-'0')
+			i++
+		}
+		if expNeg {
+			exp = -exp
+		}
+		p := 1.0
+		if exp >= 0 {
+			for j := 0; j < exp; j++ {
+				p *= 10
 			}
-
-			var fracVal float64
-			pow := 0.1
-			for _, ch := range fracPart {
-				fracVal += float64(ch-'0') * pow
-				pow /= 10
-			}
-
-			val = intVal + fracVal
+			val *= p
 		} else {
-			for _, ch := range s {
-				val = val*10 + float64(ch-'0')
+			for j := 0; j < -exp; j++ {
+				p *= 10
 			}
+			val /= p
 		}
 	}
 
 	if neg {
 		val = -val
 	}
-	*out = val
+	*f = val
 	return true, nil
 }
 

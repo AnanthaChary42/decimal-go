@@ -8,130 +8,144 @@ import (
 
 // Regex patterns for parsing, matching decimal.js patterns.
 var (
-	reDecimal = regexp.MustCompile(`(?i)^(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$`)
+	reDecimal = regexp.MustCompile(`^(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$`)
 	reBinary  = regexp.MustCompile(`(?i)^0b([01]+(\.[01]*)?|\.[01]+)(p[+-]?\d+)?$`)
 	reHex     = regexp.MustCompile(`(?i)^0x([0-9a-f]+(\.[0-9a-f]*)?|\.[0-9a-f]+)(p[+-]?\d+)?$`)
 	reOctal   = regexp.MustCompile(`(?i)^0o([0-7]+(\.[0-7]*)?|\.[0-7]+)(p[+-]?\d+)?$`)
 )
 
+// isDecimalRegex tests whether a string (sign already stripped) matches a decimal number.
 func isDecimalRegex(s string) bool {
 	return reDecimal.MatchString(s)
 }
 
-// parseDecimalStr parses a standard decimal string representation.
+// parseDecimalStr parses a decimal string (sign already set on x).
 // Equivalent to parseDecimal in decimal.js.
-func parseDecimalStr(x *Decimal, s string) {
+func parseDecimalStr(x *Decimal, str string) {
 	var e int
 
-	// Find decimal point position and scientific notation exponent.
-	dotIdx := strings.IndexByte(s, '.')
-	eIdx := strings.IndexAny(s, "eE")
+	// Decimal point?
+	dotIdx := strings.IndexByte(str, '.')
+	if dotIdx > -1 {
+		str = str[:dotIdx] + str[dotIdx+1:]
+	}
 
-	if eIdx >= 0 {
+	// Exponential form?
+	eIdx := strings.IndexAny(str, "eE")
+	if eIdx > 0 {
+		// Determine exponent.
 		if dotIdx < 0 {
 			dotIdx = eIdx
 		}
-		dotIdx += parseSimpleInt(s[eIdx+1:])
-		s = s[:eIdx]
+		expStr := str[eIdx+1:]
+		expVal := 0
+		sign := 1
+		if len(expStr) > 0 {
+			switch expStr[0] {
+			case '+':
+				expStr = expStr[1:]
+			case '-':
+				sign = -1
+				expStr = expStr[1:]
+			}
+		}
+		for _, ch := range expStr {
+			expVal = expVal*10 + int(ch-'0')
+		}
+		e = dotIdx + sign*expVal
+		str = str[:eIdx]
 	} else if dotIdx < 0 {
-		dotIdx = len(s)
-	}
-
-	// Remove the decimal point from the string.
-	actualDot := strings.IndexByte(s, '.')
-	if actualDot >= 0 {
-		s = s[:actualDot] + s[actualDot+1:]
+		// Integer.
+		e = len(str)
+	} else {
+		e = dotIdx
 	}
 
 	// Determine leading zeros.
 	i := 0
-	for i < len(s) && s[i] == '0' {
+	for i < len(str) && str[i] == '0' {
 		i++
 	}
 
 	// Determine trailing zeros.
-	sLen := len(s)
-	for sLen > i && s[sLen-1] == '0' {
-		sLen--
+	strLen := len(str)
+	for strLen > i && str[strLen-1] == '0' {
+		strLen--
 	}
-	s = s[i:sLen]
 
-	if len(s) == 0 {
+	str = str[i:strLen]
+
+	if len(str) > 0 {
+		strLen = len(str)
+		x.e = e - i - 1
+		x.d = make([]int32, 0)
+
+		// Transform base.
+		// e is the base 10 exponent.
+		// i is where to slice str to get the first word of the digits array.
+		sliceIdx := (x.e + 1) % LOG_BASE
+		if x.e < 0 {
+			sliceIdx += LOG_BASE
+		}
+
+		if sliceIdx < strLen {
+			if sliceIdx > 0 {
+				x.d = append(x.d, parseIntSlice(str[:sliceIdx]))
+			}
+			for strLen -= LOG_BASE; sliceIdx < strLen; {
+				x.d = append(x.d, parseIntSlice(str[sliceIdx:sliceIdx+LOG_BASE]))
+				sliceIdx += LOG_BASE
+			}
+			str = str[sliceIdx:]
+			sliceIdx = LOG_BASE - len(str)
+		} else {
+			sliceIdx -= strLen
+		}
+
+		for sliceIdx > 0 {
+			str += "0"
+			sliceIdx--
+		}
+
+		x.d = append(x.d, parseIntSlice(str))
+
+		if external {
+			ctx := x.getContext()
+			// Overflow?
+			if x.e > ctx.MaxE {
+				x.d = nil
+				x.e = 0
+			} else if x.e < ctx.MinE {
+				// Underflow → zero.
+				x.e = 0
+				x.d = []int32{0}
+			}
+		}
+	} else {
 		// Zero.
 		x.e = 0
 		x.d = []int32{0}
-		return
 	}
-
-	strLen := len(s)
-	e = dotIdx - i - 1 // base-10 exponent
-	x.e = e
-
-	// Calculate first word length based on exponent alignment.
-	// This is the critical step that ensures words are aligned to LOG_BASE boundaries.
-	firstLen := (e + 1) % LOG_BASE
-	if e < 0 {
-		firstLen += LOG_BASE
-	}
-	if firstLen < 0 {
-		firstLen += LOG_BASE
-	}
-
-	var digits []int32
-
-	if firstLen < strLen {
-		// First word (partial, only if firstLen > 0).
-		if firstLen > 0 {
-			digits = append(digits, parseIntSlice(s[:firstLen]))
-		}
-
-		// Middle words (full LOG_BASE chunks).
-		ii := firstLen
-		limit := strLen - LOG_BASE
-		for ii < limit {
-			digits = append(digits, parseIntSlice(s[ii:ii+LOG_BASE]))
-			ii += LOG_BASE
-		}
-
-		// Last word: remaining digits padded with trailing zeros.
-		s = s[ii:]
-		pad := LOG_BASE - len(s)
-		for pad > 0 {
-			s += "0"
-			pad--
-		}
-		digits = append(digits, parseIntSlice(s))
-	} else {
-		// The entire string fits in one word, pad with trailing zeros.
-		pad := firstLen - strLen
-		for pad > 0 {
-			s += "0"
-			pad--
-		}
-		digits = append(digits, parseIntSlice(s))
-	}
-
-	x.d = digits
-
-	// Round if precision limit exceeded.
-	ctx := x.getContext()
-	finalise(x, ctx.Precision, ctx.Rounding)
 }
 
-// parseOther parses non-standard decimal strings (hex, binary, octal, NaN, Infinity).
+// parseOther handles non-decimal strings: hex, binary, octal, Infinity, NaN, underscore separators.
+// Equivalent to parseOther in decimal.js.
 func parseOther(x *Decimal, str string) error {
-	strLower := strings.ToLower(str)
-
-	// Infinity?
-	if strLower == "infinity" || strLower == "inf" {
-		x.d = nil
-		x.e = 0
-		return nil
+	// Handle underscore separators.
+	if strings.Contains(str, "_") {
+		// Remove underscores between digits.
+		cleaned := strings.ReplaceAll(str, "_", "")
+		if isDecimalRegex(cleaned) {
+			parseDecimalStr(x, cleaned)
+			return nil
+		}
+		str = cleaned
 	}
 
-	// NaN?
-	if strLower == "nan" {
-		x.s = 0
+	if str == "Infinity" || str == "NaN" {
+		if str == "NaN" {
+			x.s = 0
+		}
 		x.e = 0
 		x.d = nil
 		return nil

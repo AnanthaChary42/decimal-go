@@ -11,16 +11,14 @@ func (x *Decimal) Abs() *Decimal {
 	if r.s < 0 {
 		r.s = 1
 	}
-	return r
+	return finalise(r, -1, 0)
 }
 
-// Neg returns a new Decimal whose value is -x.
+// Neg returns a new Decimal whose value is x negated.
 func (x *Decimal) Neg() *Decimal {
 	r := x.copy()
-	if r.s != 0 {
-		r.s = -r.s
-	}
-	return r
+	r.s = -r.s
+	return finalise(r, -1, 0)
 }
 
 // Plus returns a new Decimal whose value is x + y.
@@ -31,103 +29,162 @@ func (x *Decimal) Plus(y *Decimal) *Decimal {
 // Add returns a new Decimal whose value is x + y.
 func (x *Decimal) Add(y *Decimal) *Decimal {
 	ctx := x.getContext()
-	y = ctx.newFromDecimal(y)
+	// Convert y to use x's context.
+	y = x.newFromDecimal(y)
 
-	// Special cases: NaN or Infinity.
+	// If either is not finite...
 	if x.d == nil || y.d == nil {
+		// Return NaN if either is NaN.
 		if x.s == 0 || y.s == 0 {
-			return &Decimal{s: 0, ctx: ctx} // NaN
+			r := x.copy()
+			r.s = 0
+			r.d = nil
+			return r
 		}
-		if x.d == nil && y.d == nil {
-			if x.s != y.s {
-				return &Decimal{s: 0, ctx: ctx} // Inf + (-Inf) = NaN
-			}
-			return x.copy()
-		}
+
+		// Return x if y is finite and x is ±Infinity.
+		// Return x if both are ±Infinity with the same sign.
+		// Return NaN if both are ±Infinity with different signs.
+		// Return y if x is finite and y is ±Infinity.
 		if x.d == nil {
-			return x.copy()
+			if y.d != nil || x.s == y.s {
+				return x.copy()
+			}
+			r := x.copy()
+			r.s = 0
+			r.d = nil
+			return r
 		}
 		return y.copy()
 	}
 
-	// Zero handling.
-	if x.IsZero() {
-		return y.copy()
-	}
-	if y.IsZero() {
-		return x.copy()
-	}
-
-	// Different signs → delegate to subtraction.
+	// If signs differ...
 	if x.s != y.s {
-		yNeg := y.copy()
-		yNeg.s = -yNeg.s
-		return x.subInternal(yNeg, ctx.Precision, ctx.Rounding, false)
+		y2 := y.copy()
+		y2.s = -y2.s
+		return x.Minus(y2)
 	}
 
-	return x.addInternal(y, ctx.Precision, ctx.Rounding, false)
-}
-
-// addInternal is internal addition implementation.
-func (x *Decimal) addInternal(y *Decimal, pr int, rm RoundingMode, externalCall bool) *Decimal {
-	ctx := x.getContext()
-	xd := x.d
+	xd := make([]int32, len(x.d))
+	copy(xd, x.d)
 	yd := y.d
+	pr := ctx.Precision
+	rm := ctx.Rounding
 
-	// Ensure x has larger absolute magnitude exponent.
-	if x.e < y.e {
-		xd, yd = yd, xd
-		x, y = y, x
+	// If either is zero...
+	if xd[0] == 0 || yd[0] == 0 {
+		if yd[0] == 0 {
+			result := x.copy()
+			if external {
+				return finalise(result, pr, rm)
+			}
+			return result
+		}
+		result := y.copy()
+		if external {
+			return finalise(result, pr, rm)
+		}
+		return result
 	}
 
-	e := x.e
-	eDiff := x.e - y.e
+	// Calculate base 1e7 exponents.
+	k := ifloorDiv(x.e, LOG_BASE)
+	e := ifloorDiv(y.e, LOG_BASE)
 
-	// Convert exponent difference to base-1e7 word difference.
-	k := eDiff / LOG_BASE
+	i := k - e
 
-	// Align digits slices.
-	if k > 0 {
-		// Pad yd with leading zeros.
-		pad := make([]int32, k)
-		yd = append(pad, yd...)
+	// If base 1e7 exponents differ...
+	if i != 0 {
+		var d []int32
+		var length int
+
+		if i < 0 {
+			d = xd
+			i = -i
+			length = len(yd)
+		} else {
+			d = make([]int32, len(yd))
+			copy(d, yd)
+			yd = d
+			e = k
+			length = len(xd)
+		}
+
+		// Limit number of zeros prepended to max(ceil(pr / LOG_BASE), len) + 1.
+		kk := iceil(pr, LOG_BASE)
+		if kk > length {
+			length = kk + 1
+		} else {
+			length = length + 1
+		}
+
+		if i > length {
+			i = length
+			d = d[:1]
+		}
+
+		// Prepend zeros to equalise exponents.
+		// Reverse, push zeros, reverse back.
+		reversed := make([]int32, len(d))
+		for idx := 0; idx < len(d); idx++ {
+			reversed[len(d)-1-idx] = d[idx]
+		}
+		for j := 0; j < i; j++ {
+			reversed = append(reversed, 0)
+		}
+		d2 := make([]int32, len(reversed))
+		for idx := 0; idx < len(reversed); idx++ {
+			d2[len(reversed)-1-idx] = reversed[idx]
+		}
+
+		if i < 0 {
+			// d was xd
+			xd = d2
+		} else {
+			yd = d2
+		}
 	}
 
-	// Make copies so we don't mutate originals.
-	xc := make([]int32, len(xd))
-	copy(xc, xd)
-	yc := make([]int32, len(yd))
-	copy(yc, yd)
+	length := len(xd)
+	i2 := len(yd)
 
-	// Ensure equal lengths.
-	for len(xc) < len(yc) {
-		xc = append(xc, 0)
-	}
-	for len(yc) < len(xc) {
-		yc = append(yc, 0)
+	// If yd is longer than xd, swap xd and yd so xd points to the longer array.
+	if length-i2 < 0 {
+		i2 = length
+		d := yd
+		yd = xd
+		xd = d
 	}
 
-	// Add word by word with carry.
+	// Only start adding at yd.length - 1.
 	var carry int32
-	for i := len(xc) - 1; i >= 0; i-- {
-		sum := xc[i] + yc[i] + carry
-		xc[i] = sum % BASE
+	for i3 := i2 - 1; i3 >= 0; i3-- {
+		sum := xd[i3] + yd[i3] + carry
 		carry = sum / BASE
+		xd[i3] = sum % BASE
 	}
 
-	if carry > 0 {
-		xc = append([]int32{carry}, xc...)
-		e += LOG_BASE
+	if carry != 0 {
+		xd = append([]int32{carry}, xd...)
+		e++
+	}
+
+	// Remove trailing zeros.
+	for len(xd) > 0 && xd[len(xd)-1] == 0 {
+		xd = xd[:len(xd)-1]
 	}
 
 	result := &Decimal{
-		d:   xc,
-		e:   getBase10Exponent(xc, (e-x.e)/LOG_BASE+ifloorDiv(x.e, LOG_BASE)),
-		s:   x.s,
+		d:   xd,
+		e:   getBase10Exponent(xd, e),
+		s:   y.s,
 		ctx: ctx,
 	}
 
-	return finalise(result, pr, rm)
+	if external {
+		return finalise(result, pr, rm)
+	}
+	return result
 }
 
 // Minus returns a new Decimal whose value is x - y.
@@ -138,46 +195,68 @@ func (x *Decimal) Minus(y *Decimal) *Decimal {
 // Sub returns a new Decimal whose value is x - y.
 func (x *Decimal) Sub(y *Decimal) *Decimal {
 	ctx := x.getContext()
-	y = ctx.newFromDecimal(y)
+	y = x.newFromDecimal(y)
 
-	// Special cases: NaN or Infinity.
+	// If either is not finite...
 	if x.d == nil || y.d == nil {
 		if x.s == 0 || y.s == 0 {
-			return &Decimal{s: 0, ctx: ctx} // NaN
+			r := x.copy()
+			r.s = 0
+			r.d = nil
+			return r
 		}
-		if x.d == nil && y.d == nil {
-			if x.s == y.s {
-				return &Decimal{s: 0, ctx: ctx} // Inf - Inf = NaN
-			}
+
+		if x.d != nil {
+			// x is finite, y is ±Infinity → return -y
+			r := y.copy()
+			r.s = -r.s
+			return r
+		}
+
+		if y.d != nil || x.s != y.s {
 			return x.copy()
 		}
-		if x.d == nil {
-			return x.copy()
-		}
-		yNeg := y.copy()
-		yNeg.s = -yNeg.s
-		return yNeg
+
+		// Both ±Infinity with same sign → NaN
+		r := x.copy()
+		r.s = 0
+		r.d = nil
+		return r
 	}
 
-	// Different signs → delegate to addition.
+	// If signs differ...
 	if x.s != y.s {
-		yNeg := y.copy()
-		yNeg.s = -yNeg.s
-		return x.addInternal(yNeg, ctx.Precision, ctx.Rounding, false)
+		y2 := y.copy()
+		y2.s = -y2.s
+		return x.Plus(y2)
 	}
 
-	return x.subInternal(y, ctx.Precision, ctx.Rounding, false)
-}
+	xd := make([]int32, len(x.d))
+	copy(xd, x.d)
+	yd := y.d
+	pr := ctx.Precision
+	rm := ctx.Rounding
 
-// subInternal is internal subtraction implementation.
-func (x *Decimal) subInternal(y *Decimal, pr int, rm RoundingMode, externalCall bool) *Decimal {
-	ctx := x.getContext()
+	// If either is zero...
+	if xd[0] == 0 || yd[0] == 0 {
+		if yd[0] != 0 {
+			r := y.copy()
+			r.s = -r.s
+			if external {
+				return finalise(r, pr, rm)
+			}
+			return r
+		}
 
-	// Compare absolute values.
-	cmp, _ := x.Abs().Cmp(y.Abs())
+		if xd[0] != 0 {
+			r := x.copy()
+			if external {
+				return finalise(r, pr, rm)
+			}
+			return r
+		}
 
-	if cmp == 0 {
-		// x == y in absolute value: result is zero.
+		// Both zero.
 		r := &Decimal{ctx: ctx}
 		if rm == RoundFloor {
 			r.s = -1
@@ -189,70 +268,147 @@ func (x *Decimal) subInternal(y *Decimal, pr int, rm RoundingMode, externalCall 
 		return r
 	}
 
-	xLTy := cmp < 0
-	if xLTy {
-		x, y = y, x
-	}
+	// x and y are finite, non-zero numbers with the same sign.
+	e := ifloorDiv(y.e, LOG_BASE)
+	xe := ifloorDiv(x.e, LOG_BASE)
 
-	xd := make([]int32, len(x.d))
-	copy(xd, x.d)
-	yd := make([]int32, len(y.d))
-	copy(yd, y.d)
+	k := xe - e
 
-	e := x.e
-	eDiff := x.e - y.e
-	k := eDiff / LOG_BASE
-
-	if k > 0 {
-		pad := make([]int32, k)
-		yd = append(pad, yd...)
-	}
-
-	for len(xd) < len(yd) {
-		xd = append(xd, 0)
-	}
-
-	// Subtract yd from xd with borrow.
-	var borrow int32
-	for i := len(xd) - 1; i >= 0; i-- {
-		yVal := int32(0)
-		if i < len(yd) {
-			yVal = yd[i]
+	// If base 1e7 exponents differ...
+	xLTy := false
+	if k != 0 {
+		if k < 0 {
+			xLTy = true
+			k = -k
 		}
-		diff := xd[i] - yVal - borrow
-		if diff < 0 {
-			diff += BASE
-			borrow = 1
+
+		var d []int32
+		var length int
+		if xLTy {
+			d = make([]int32, len(xd))
+			copy(d, xd)
+			length = len(yd)
 		} else {
-			borrow = 0
+			d = make([]int32, len(yd))
+			copy(d, yd)
+			e = xe
+			length = len(xd)
 		}
-		xd[i] = diff
+
+		i := maxInt(iceil(pr, LOG_BASE), length) + 2
+		if k > i {
+			k = i
+			d = d[:1]
+		}
+
+		// Prepend zeros.
+		reversed := make([]int32, len(d))
+		for idx := 0; idx < len(d); idx++ {
+			reversed[len(d)-1-idx] = d[idx]
+		}
+		for j := 0; j < k; j++ {
+			reversed = append(reversed, 0)
+		}
+		d2 := make([]int32, len(reversed))
+		for idx := 0; idx < len(reversed); idx++ {
+			d2[len(reversed)-1-idx] = reversed[idx]
+		}
+
+		if xLTy {
+			xd = d2
+		} else {
+			yd = d2
+		}
+	} else {
+		// Exponents equal. Compare digits.
+		i := len(xd)
+		length := len(yd)
+		if i < length {
+			xLTy = true
+		}
+		minLen := length
+		if i < minLen {
+			minLen = i
+		}
+
+		for i2 := 0; i2 < minLen; i2++ {
+			if xd[i2] != yd[i2] {
+				xLTy = xd[i2] < yd[i2]
+				break
+			}
+		}
+		k = 0
 	}
 
-	// Remove leading zeros and adjust exponent.
-	for len(xd) > 1 && xd[0] == 0 {
-		xd = xd[1:]
-		e -= LOG_BASE
+	if xLTy {
+		// Swap.
+		xd, yd = yd, xd
+	}
+
+	length := len(xd)
+
+	// Append zeros to xd if shorter.
+	for i := len(yd) - length; i > 0; i-- {
+		xd = append(xd, 0)
+		length++
+	}
+
+	// Subtract yd from xd.
+	for i := len(yd) - 1; i >= k; i-- {
+		if xd[i] < yd[i] {
+			j := i
+			for j > 0 && xd[j-1] == 0 {
+				j--
+				xd[j] = BASE - 1
+			}
+			if j > 0 {
+				xd[j-1]--
+			}
+			xd[i] += BASE
+		}
+		xd[i] -= yd[i]
 	}
 
 	// Remove trailing zeros.
-	for len(xd) > 1 && xd[len(xd)-1] == 0 {
+	for len(xd) > 0 && xd[len(xd)-1] == 0 {
 		xd = xd[:len(xd)-1]
 	}
 
-	s := x.s
+	// Remove leading zeros and adjust exponent.
+	for len(xd) > 0 && xd[0] == 0 {
+		xd = xd[1:]
+		e--
+	}
+
+	// Zero?
+	if len(xd) == 0 {
+		r := &Decimal{ctx: ctx}
+		if rm == RoundFloor {
+			r.s = -1
+		} else {
+			r.s = 1
+		}
+		r.e = 0
+		r.d = []int32{0}
+		return r
+	}
+
+	s := y.s
 	if xLTy {
 		s = -s
 	}
 
 	result := &Decimal{
 		d:   xd,
-		e:   getBase10Exponent(xd, ifloorDiv(e, LOG_BASE)),
+		e:   getBase10Exponent(xd, e),
 		s:   s,
 		ctx: ctx,
 	}
 
-	return finalise(result, pr, rm)
+	if external {
+		return finalise(result, pr, rm)
+	}
+	return result
 }
 
 // Times returns a new Decimal whose value is x * y.
@@ -263,152 +419,287 @@ func (x *Decimal) Times(y *Decimal) *Decimal {
 // Mul returns a new Decimal whose value is x * y.
 func (x *Decimal) Mul(y *Decimal) *Decimal {
 	ctx := x.getContext()
-	y = ctx.newFromDecimal(y)
+	y = x.newFromDecimal(y)
 
 	sign := x.s * y.s
 
-	// Special cases: NaN or Infinity.
-	if x.d == nil || y.d == nil {
-		if x.s == 0 || y.s == 0 {
-			return &Decimal{s: 0, ctx: ctx}
-		}
-		if x.IsZero() || y.IsZero() {
-			return &Decimal{s: 0, ctx: ctx} // 0 * Inf = NaN
-		}
-		return &Decimal{s: sign, d: nil, e: 0, ctx: ctx} // Inf * y = Inf
-	}
-
-	// Zero handling.
-	if x.IsZero() || y.IsZero() {
-		return &Decimal{s: sign, e: 0, d: []int32{0}, ctx: ctx}
-	}
-
-	// Long multiplication on base-1e7 word arrays.
 	xd := x.d
 	yd := y.d
-	xL := len(xd)
-	yL := len(yd)
 
-	res := make([]int32, xL+yL)
+	// If either is NaN, ±Infinity or ±0...
+	if len(xd) == 0 || xd[0] == 0 || len(yd) == 0 || yd[0] == 0 {
 
-	for i := xL - 1; i >= 0; i-- {
-		var carry int64
-		for j := yL - 1; j >= 0; j-- {
-			prod := int64(xd[i])*int64(yd[j]) + int64(res[i+j+1]) + carry
-			res[i+j+1] = int32(prod % int64(BASE))
-			carry = prod / int64(BASE)
+		r := &Decimal{ctx: ctx}
+
+		if sign == 0 || (len(xd) > 0 && xd[0] == 0 && len(yd) == 0) ||
+			(len(yd) > 0 && yd[0] == 0 && len(xd) == 0) {
+			// NaN
+			r.s = 0
+			r.d = nil
+			r.e = 0
+			return r
 		}
-		res[i] += int32(carry)
+
+		if xd == nil || yd == nil {
+			// ±Infinity
+			r.s = sign
+			r.d = nil
+			r.e = 0
+			return r
+		}
+
+		// ±0
+		r.s = sign
+		r.e = 0
+		r.d = []int32{0}
+		return r
 	}
 
-	// Adjust exponent.
-	e := x.e + y.e
+	e := ifloorDiv(x.e, LOG_BASE) + ifloorDiv(y.e, LOG_BASE)
+	xdL := len(xd)
+	ydL := len(yd)
 
-	// Remove leading zero if present.
-	if res[0] == 0 {
-		res = res[1:]
-	} else {
-		e += LOG_BASE
+	// Ensure xd points to the longer array.
+	if xdL < ydL {
+		xd, yd = yd, xd
+		xdL, ydL = ydL, xdL
+	}
+
+	// Initialise the result array with zeros.
+	rL := xdL + ydL
+	r := make([]int32, rL)
+
+	// Multiply!
+	for i := ydL - 1; i >= 0; i-- {
+		var carry int32
+		for k := xdL + i; k > i; k-- {
+			t := int64(r[k]) + int64(yd[i])*int64(xd[k-i-1]) + int64(carry)
+			r[k] = int32(t % int64(BASE))
+			carry = int32(t / int64(BASE))
+		}
+		r[i] = (r[i] + carry) % BASE
 	}
 
 	// Remove trailing zeros.
-	for len(res) > 1 && res[len(res)-1] == 0 {
-		res = res[:len(res)-1]
+	for rL > 0 && r[rL-1] == 0 {
+		rL--
+	}
+	r = r[:rL]
+
+	if carry := r[0]; carry != 0 {
+		// There was a carry from the shift position, adjust.
+	}
+
+	// Check if the first element is the carry or the actual first digit.
+	if len(r) > 0 && r[0] == 0 {
+		r = r[1:]
+		// don't increment e
+	} else {
+		e++
 	}
 
 	result := &Decimal{
-		d:   res,
-		e:   getBase10Exponent(res, ifloorDiv(e, LOG_BASE)),
+		d:   r,
+		e:   getBase10Exponent(r, e),
 		s:   sign,
 		ctx: ctx,
 	}
 
-	return finalise(result, ctx.Precision, ctx.Rounding)
+	if external {
+		return finalise(result, ctx.Precision, ctx.Rounding)
+	}
+	return result
 }
 
 // Div returns a new Decimal whose value is x / y.
 func (x *Decimal) Div(y *Decimal) *Decimal {
+	return divide(x, x.newFromDecimal(y), -1, RoundingMode(0), false, 0)
+}
+
+// DivToInt returns a new Decimal whose integer value is x / y.
+func (x *Decimal) DivToInt(y *Decimal) *Decimal {
 	ctx := x.getContext()
-	return divide(x, y, ctx.Precision, ctx.Rounding, false, 0)
+	result := divide(x, x.newFromDecimal(y), 0, RoundDown, true, 0)
+	return finalise(result, ctx.Precision, ctx.Rounding)
 }
 
 // Mod returns a new Decimal whose value is x % y.
 func (x *Decimal) Mod(y *Decimal) *Decimal {
 	ctx := x.getContext()
-	y = ctx.newFromDecimal(y)
+	y = x.newFromDecimal(y)
 
-	// Special cases: NaN or Infinity.
-	if x.d == nil || y.d == nil || x.s == 0 || y.s == 0 || y.IsZero() {
-		return &Decimal{s: 0, ctx: ctx} // NaN
-	}
-	if x.IsZero() {
-		return &Decimal{s: x.s, e: 0, d: []int32{0}, ctx: ctx}
+	// Return NaN if x is ±Infinity or NaN, or y is NaN or ±0.
+	if x.d == nil || y.s == 0 || (y.d != nil && y.d[0] == 0) {
+		r := x.copy()
+		r.s = 0
+		r.d = nil
+		return r
 	}
 
-	// Modulo via integer division: x - floor(x/y) * y.
-	q := x.Div(y).Floor()
-	prod := q.Mul(y)
-	return x.Sub(prod)
+	// Return x if y is ±Infinity or x is ±0.
+	if y.d == nil || (x.d != nil && x.d[0] == 0) {
+		return finalise(x.copy(), ctx.Precision, ctx.Rounding)
+	}
+
+	external = false
+
+	var q *Decimal
+	if ctx.Modulo == Euclid {
+		q = divide(x, y.Abs(), 0, RoundFloor, true, 0)
+		q.s *= y.s
+	} else {
+		q = divide(x, y, 0, ctx.Modulo, true, 0)
+	}
+
+	q = q.Times(y)
+	external = true
+
+	return x.Minus(q)
 }
 
-// Pow returns a new Decimal whose value is x ^ y.
+// Pow returns a new Decimal whose value is x raised to the power y.
 func (x *Decimal) Pow(y *Decimal) *Decimal {
 	ctx := x.getContext()
-	y = ctx.newFromDecimal(y)
+	yn := y.ToNumber()
 
-	// x ^ 0 = 1
-	if y.IsZero() {
-		return ctx.NewFromInt64(1)
+	// Either ±Infinity, NaN or ±0?
+	if x.d == nil || y.d == nil || x.d[0] == 0 || y.d[0] == 0 {
+		v := math.Pow(x.ToNumber(), yn)
+		r, _ := ctx.NewFromFloat64(v)
+		return r
 	}
-	// 0 ^ y
-	if x.IsZero() {
-		if y.s < 0 {
-			return &Decimal{s: x.s, d: nil, e: 0, ctx: ctx} // 0^-y = Inf
+
+	xCopy := x.copy()
+
+	if xCopy.Eq(ctx.NewFromInt64(1)) {
+		return xCopy
+	}
+
+	pr := ctx.Precision
+	rm := ctx.Rounding
+
+	if y.Eq(ctx.NewFromInt64(1)) {
+		return finalise(xCopy, pr, rm)
+	}
+
+	// y exponent
+	e := ifloorDiv(y.e, LOG_BASE)
+
+	// If y is a small integer use exponentiation by squaring.
+	if e >= len(y.d)-1 {
+		k := yn
+		if k < 0 {
+			k = -k
 		}
-		return &Decimal{s: x.s, e: 0, d: []int32{0}, ctx: ctx}
+		if k <= MAX_SAFE_INTEGER {
+			r := intPow(ctx, xCopy, int(k), pr)
+			if y.s < 0 {
+				return divide(ctx.NewFromInt64(1), r, pr, rm, false, 0)
+			}
+			return finalise(r, pr, rm)
+		}
 	}
 
-	// Integer exponent optimization.
-	if y.IsInt() {
-		n := parseSimpleInt(y.String())
-		return intPow(ctx, x, n, ctx.Precision)
+	s := x.s
+
+	// if x is negative
+	if s < 0 {
+		if e < len(y.d)-1 {
+			// y is not an integer → NaN
+			r := x.copy()
+			r.s = 0
+			r.d = nil
+			return r
+		}
+
+		// Result is positive if last digit of integer y is even.
+		if y.d[e]%2 == 0 {
+			s = 1
+		}
+
+		// if x.eq(-1)
+		if x.e == 0 && x.d[0] == 1 && len(x.d) == 1 {
+			xCopy.s = s
+			return xCopy
+		}
 	}
 
-	// General real exponent: x^y = exp(y * ln(x)).
-	// (Placeholder fallback to float64 math for non-integer exponents).
-	xF, _ := x.Float64()
-	yF, _ := y.Float64()
-	powF := math.Pow(xF, yF)
-	r, _ := ctx.NewFromFloat64(powF)
+	// For now, use float64 approximation for complex pow.
+	// TODO: implement full precision pow using exp(y*ln(x)).
+	result := math.Pow(x.ToNumber(), yn)
+	r, _ := ctx.NewFromFloat64(result)
+	if r != nil {
+		r.s = s
+	}
 	return r
 }
 
 // Sqrt returns a new Decimal whose value is the square root of x.
 func (x *Decimal) Sqrt() *Decimal {
 	ctx := x.getContext()
+	d := x.d
+	e := x.e
+	s := x.s
 
-	if x.s < 0 {
-		return &Decimal{s: 0, ctx: ctx} // Sqrt(-x) = NaN
+	// Negative/NaN/Infinity/zero?
+	if s != 1 || d == nil || d[0] == 0 {
+		if s == 0 || (s < 0 && (d == nil || d[0] != 0)) {
+			// NaN
+			r := x.copy()
+			r.s = 0
+			r.d = nil
+			return r
+		}
+		if d != nil {
+			return x.copy() // sqrt(0) = 0, sqrt(-0) = -0
+		}
+		// sqrt(Infinity) = Infinity
+		r := x.copy()
+		r.d = nil
+		return r
 	}
-	if x.IsZero() || x.d == nil {
-		return x.copy()
+
+	external = false
+
+	// Initial estimate.
+	sFloat := math.Sqrt(x.ToNumber())
+
+	var r *Decimal
+	if sFloat == 0 || math.IsInf(sFloat, 0) {
+		n := digitsToStringExact(d)
+		if (len(n)+e)%2 == 0 {
+			n += "0"
+		}
+		sFloat = math.Sqrt(parseFloatStr(n))
+		e = ifloorDiv(e+1, 2) - boolToInt(e < 0 || e%2 != 0)
+
+		if math.IsInf(sFloat, 0) {
+			r, _ = ctx.New("5e" + itoa(e))
+		} else {
+			r, _ = ctx.New(formatFloat(sFloat, e))
+		}
+	} else {
+		r, _ = ctx.New(formatFloatSimple(sFloat))
 	}
 
-	// Newton-Raphson initial estimate.
-	xF, _ := x.Float64()
-	sqrtF := math.Sqrt(xF)
-	r, _ := ctx.NewFromFloat64(sqrtF)
+	sd := ctx.Precision + 3
 
-	// Newton iterations: r_{n+1} = 0.5 * (r_n + x / r_n)
-	half := ctx.NewFromInt64(5).Times(ctx.NewFromInt64(1)) // 0.5 via 5e-1
-	_ = half
+	// Newton-Raphson iteration.
+	for iter := 0; iter < 100; iter++ {
+		t := r.copy()
+		r = divide(x, t, sd+2, RoundDown, false, 0).Plus(t).Times(
+			&Decimal{d: []int32{5000000}, e: -1, s: 1, ctx: ctx}, // 0.5
+		)
 
-	// 5 iteration steps for 20+ digit convergence.
-	two := ctx.NewFromInt64(2)
-	for i := 0; i < 7; i++ {
-		r = r.Plus(x.Div(r)).Div(two)
+		tStr := digitsToStringExact(t.d)[:minInt(sd, len(digitsToStringExact(t.d)))]
+		rStr := digitsToStringExact(r.d)[:minInt(sd, len(digitsToStringExact(r.d)))]
+
+		if tStr == rStr {
+			break
+		}
 	}
 
+	external = true
 	return finalise(r, ctx.Precision, ctx.Rounding)
 }
 
@@ -416,24 +707,87 @@ func (x *Decimal) Sqrt() *Decimal {
 func (x *Decimal) Cbrt() *Decimal {
 	ctx := x.getContext()
 
-	if x.IsZero() || x.d == nil || x.s == 0 {
+	if !x.IsFinite() || x.IsZero() {
 		return x.copy()
 	}
 
-	xF, _ := x.Float64()
-	cbrtF := math.Cbrt(xF)
-	r, _ := ctx.NewFromFloat64(cbrtF)
+	external = false
 
-	// Newton iteration for cbrt: r_{n+1} = (2*r_n + x / r_n^2) / 3
-	two := ctx.NewFromInt64(2)
-	three := ctx.NewFromInt64(3)
-
-	for i := 0; i < 7; i++ {
-		r2 := r.Times(r)
-		r = two.Times(r).Plus(x.Div(r2)).Div(three)
+	// Initial estimate.
+	sFloat := math.Cbrt(x.ToNumber())
+	var r *Decimal
+	if sFloat == 0 || math.IsInf(sFloat, 0) {
+		r, _ = ctx.New("5e" + itoa(ifloorDiv(x.e+1, 3)))
+		r.s = x.s
+	} else {
+		r, _ = ctx.New(formatFloatSimple(sFloat))
 	}
 
+	sd := ctx.Precision + 3
+
+	// Halley's method.
+	for iter := 0; iter < 100; iter++ {
+		t := r.copy()
+		t3 := t.Times(t).Times(t)
+		t3plusx := t3.Plus(x)
+		r = divide(t3plusx.Plus(x).Times(t), t3plusx.Plus(t3), sd+2, RoundDown, false, 0)
+
+		tStr := digitsToStringExact(t.d)[:minInt(sd, len(digitsToStringExact(t.d)))]
+		rStr := digitsToStringExact(r.d)[:minInt(sd, len(digitsToStringExact(r.d)))]
+
+		if tStr == rStr {
+			break
+		}
+	}
+
+	external = true
 	return finalise(r, ctx.Precision, ctx.Rounding)
+}
+
+// intPow implements exponentiation by squaring.
+// Used by Pow and parseOther.
+func intPow(ctx *Context, x *Decimal, n int, pr int) *Decimal {
+	r := ctx.NewFromInt64(1)
+	k := iceil(pr, LOG_BASE) + 4
+
+	external = false
+
+	for {
+		if n%2 != 0 {
+			r = r.Times(x)
+			truncateArr(&r.d, k)
+		}
+
+		n = n / 2
+		if n == 0 {
+			break
+		}
+
+		x = x.Times(x)
+		truncateArr(&x.d, k)
+	}
+
+	external = true
+	return r
+}
+
+// Helper: parse float from string.
+func parseFloatStr(s string) float64 {
+	v := 0.0
+	parseFloat(s, &v)
+	return v
+}
+
+// Helper: format float with exponent.
+func formatFloat(f float64, e int) string {
+	s := formatFloatSimple(f)
+	// Find 'e' in the result.
+	for i, ch := range s {
+		if ch == 'e' || ch == 'E' {
+			return s[:i+1] + itoa(e)
+		}
+	}
+	return s
 }
 
 // formatFloatSimple formats a float64 to a clean decimal string.

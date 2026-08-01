@@ -14,25 +14,9 @@ func ifloorDiv(a, b int) int {
 	return a/b - 1
 }
 
-// tinyPow returns b^e for small bases and positive exponents.
-// Equivalent to tinyPow in decimal.js.
-func tinyPow(b, e int) float64 {
-	n := float64(b)
-	for e--; e > 0; e-- {
-		n *= float64(b)
-	}
-	return n
-}
-
 // mathpow is math.Pow for int arguments.
 func mathpow(base, exp int) float64 {
 	return math.Pow(float64(base), float64(exp))
-}
-
-// digitsToString converts a digit array (base 1e7) to a decimal string.
-// Equivalent to digitsToString in decimal.js.
-func digitsToString(d []int32) string {
-	return digitsToStringExact(d)
 }
 
 // digitsToStringExact is the core digit-to-string implementation.
@@ -159,88 +143,6 @@ func getPrecision(digits []int32) int {
 	return length
 }
 
-// checkInt32 validates that i is an integer in [min, max].
-func checkInt32(i, min, max int) error {
-	if i < min || i > max {
-		return newInvalidArgError(i)
-	}
-	return nil
-}
-
-// checkRoundingDigits checks rounding digits to determine if more precision is needed.
-// Returns true if the result may need recalculation with higher precision.
-func checkRoundingDigits(d []int32, i int, rm RoundingMode, repeating *int) bool {
-	var di, k, r int
-	var rd int32
-
-	// Get the length of the first word of the array d.
-	for k2 := d[0]; k2 >= 10; k2 /= 10 {
-		i--
-	}
-
-	// Is the rounding digit in the first word of d?
-	i--
-	if i < 0 {
-		i += LOG_BASE
-		di = 0
-	} else {
-		di = iceil(i+1, LOG_BASE)
-		i %= LOG_BASE
-	}
-
-	// i is the index (0-6) of the rounding digit.
-	k = int(mathpow(10, LOG_BASE-i))
-	if di < len(d) {
-		rd = d[di] % int32(k)
-	}
-
-	if repeating == nil {
-		if i < 3 {
-			if i == 0 {
-				rd = rd / 100
-			} else if i == 1 {
-				rd = rd / 10
-			}
-			r = boolToInt(int(rm) < 4 && rd == 99999 || int(rm) > 3 && rd == 49999 || rd == 50000 || rd == 0)
-		} else {
-			halfK := int32(k / 2)
-			nextDigitCheck := int32(0)
-			if di+1 < len(d) {
-				nextDigitCheck = d[di+1] / int32(k) / 100
-			}
-			pow10 := int32(mathpow(10, i-2))
-			r = boolToInt(
-				(int(rm) < 4 && rd+1 == int32(k) || int(rm) > 3 && rd+1 == halfK) &&
-					nextDigitCheck == pow10-1 ||
-					(rd == halfK || rd == 0) && nextDigitCheck == 0)
-		}
-	} else {
-		if i < 4 {
-			if i == 0 {
-				rd = rd / 1000
-			} else if i == 1 {
-				rd = rd / 100
-			} else if i == 2 {
-				rd = rd / 10
-			}
-			r = boolToInt((*repeating != 0 || int(rm) < 4) && rd == 9999 || *repeating == 0 && int(rm) > 3 && rd == 4999)
-		} else {
-			halfK := int32(k / 2)
-			nextDigitCheck := int32(0)
-			if di+1 < len(d) {
-				nextDigitCheck = d[di+1] / int32(k) / 1000
-			}
-			pow10 := int32(mathpow(10, i-3))
-			r = boolToInt(
-				((*repeating != 0 || int(rm) < 4) && rd+1 == int32(k) ||
-					(*repeating == 0 && int(rm) > 3) && rd+1 == halfK) &&
-					nextDigitCheck == pow10-1)
-		}
-	}
-
-	return r != 0
-}
-
 // iceil returns ceil(a / b).
 func iceil(a, b int) int {
 	if a%b == 0 {
@@ -306,9 +208,6 @@ func truncateArr(arr *[]int32, length int) bool {
 	return false
 }
 
-// Global flag to track whether internal functions should bypass limits.
-var external = true
-
 // finalise rounds x to sd significant digits using rounding mode rm.
 // Checks for overflow/underflow.
 // Equivalent to finalise in decimal.js.
@@ -342,6 +241,10 @@ func finalise(x *Decimal, sd int, rm RoundingMode, isTruncated ...bool) *Decimal
 		return x
 	}
 
+	var directedRM RoundingMode
+	var halfDirectedRM RoundingMode
+	var isTrunc bool
+
 	// Get the length of the first word of the digits array xd.
 	var digits int
 	for k := xd[0]; k >= 10; k /= 10 {
@@ -356,8 +259,7 @@ func finalise(x *Decimal, sd int, rm RoundingMode, isTruncated ...bool) *Decimal
 	var xdi int
 	var w int32
 	var j int
-
-	var isTrunc bool
+	var kVal int32
 
 	// Is the rounding digit in the first word of xd?
 	if i < 0 {
@@ -413,40 +315,62 @@ func finalise(x *Decimal, sd int, rm RoundingMode, isTruncated ...bool) *Decimal
 	}
 
 	// Are there any non-zero digits after the rounding digit?
-	isTrunc = truncated || sd < 0 ||
-		(xdi+1 < len(xd) && xd[xdi+1] != 0) // simplified check
-	if !isTrunc && j >= 0 {
-		// Check remaining digits in current word.
-		rem := w % int32(mathpow(10, maxInt(0, digits-j-1)))
-		if rem != 0 {
-			isTrunc = true
-		}
-	} else if !isTrunc && j < 0 {
-		if w != 0 {
-			isTrunc = true
+	// JS: isTruncated = isTruncated || sd < 0 ||
+	//   xd[xdi + 1] !== void 0 || (j < 0 ? w : w % mathpow(10, digits - j - 1));
+	// Note: xd[xdi + 1] !== void 0 means the element EXISTS (index in bounds), not non-zero.
+	isTrunc = truncated || sd < 0 || xdi+1 < len(xd)
+	if !isTrunc {
+		if j < 0 {
+			isTrunc = w != 0
+		} else {
+			rem := w % int32(mathpow(10, maxInt(0, digits-j-1)))
+			isTrunc = rem != 0
 		}
 	}
 
-	roundUp = int(rm) < 4 &&
-		(rd != 0 || isTrunc) && (rm == 0 || rm == RoundingMode(boolToInt(x.s < 0)*3+boolToInt(x.s >= 0)*2))
+	// JS: roundUp = rm < 4
+	//   ? (rd || isTruncated) && (rm == 0 || rm == (x.s < 0 ? 3 : 2))
+	//   : rd > 5 || rd == 5 && (rm == 4 || isTruncated || rm == 6 &&
+	//     ((i > 0 ? j > 0 ? w / mathpow(10, digits - j) : 0 : xd[xdi - 1]) % 10) & 1 ||
+	//       rm == (x.s < 0 ? 8 : 7));
 
-	if !roundUp {
-		// Determine the rounding mode thresholds.
-		rmNeg := RoundingMode(boolToInt(x.s < 0)*8 + boolToInt(x.s >= 0)*7)
+	if x.s < 0 {
+		directedRM = 3 // RoundFloor
+	} else {
+		directedRM = 2 // RoundCeil
+	}
 
-		// Check whether the digit to the left of the rounding digit is odd.
+	if int(rm) < 4 {
+		// Directed rounding modes: RoundUp(0), RoundDown(1), RoundCeil(2), RoundFloor(3)
+		roundUp = (rd != 0 || isTrunc) && (rm == 0 || rm == directedRM)
+	} else {
+		// Half-rounding modes: RoundHalfUp(4), RoundHalfDown(5), RoundHalfEven(6),
+		// RoundHalfCeil(7), RoundHalfFloor(8), Euclid(9)
+		if x.s < 0 {
+			halfDirectedRM = 8 // RoundHalfFloor
+		} else {
+			halfDirectedRM = 7 // RoundHalfCeil
+		}
+
+		// Get the digit to the left of the rounding digit.
 		var leftDigit int32
 		if i > 0 {
 			if j > 0 {
 				leftDigit = w / int32(mathpow(10, digits-j))
+			} else {
+				leftDigit = 0
 			}
-		} else if xdi > 0 {
-			leftDigit = xd[xdi-1]
+		} else {
+			if xdi > 0 {
+				leftDigit = xd[xdi-1]
+			} else {
+				leftDigit = 0
+			}
 		}
-		isOddLeft := leftDigit%2 != 0
 
-		roundUp = rd > 5 || (rd == 5 && (rm == 4 || isTrunc ||
-			(rm == 6 && isOddLeft) || rm == rmNeg))
+		roundUp = rd > 5 || (rd == 5 && (rm == 4 || isTrunc || (rm == 6 &&
+			(leftDigit%10)&1 != 0) ||
+			rm == halfDirectedRM))
 	}
 
 	if sd < 1 || len(xd) == 0 || xd[0] == 0 {
@@ -455,6 +379,7 @@ func finalise(x *Decimal, sd int, rm RoundingMode, isTruncated ...bool) *Decimal
 			// Convert sd to decimal places.
 			sdAdj := sd - x.e - 1
 			x.d = append(x.d[:0], int32(mathpow(10, (LOG_BASE-sdAdj%LOG_BASE)%LOG_BASE)))
+			// JS: x.e = -sd || 0  (i.e. if -sd is 0, use 0; otherwise use -sd)
 			if sdAdj > 0 {
 				x.e = -sdAdj
 			} else {
@@ -472,15 +397,16 @@ func finalise(x *Decimal, sd int, rm RoundingMode, isTruncated ...bool) *Decimal
 	if i == 0 {
 		xd = xd[:xdi]
 		x.d = xd
+		kVal = 1
 		xdi--
 	} else {
 		xd = xd[:xdi+1]
 		x.d = xd
-		k := int32(mathpow(10, LOG_BASE-i))
+		kVal = int32(mathpow(10, LOG_BASE-i))
 
 		// E.g. 56700 becomes 56000 if 7 is the rounding digit.
 		if j > 0 {
-			xd[xdi] = (w / int32(mathpow(10, digits-j)) % int32(mathpow(10, j))) * k
+			xd[xdi] = (w / int32(mathpow(10, digits-j)) % int32(mathpow(10, j))) * kVal
 		} else {
 			xd[xdi] = 0
 		}
@@ -495,7 +421,7 @@ func finalise(x *Decimal, sd int, rm RoundingMode, isTruncated ...bool) *Decimal
 				for j2 := xd[0]; j2 >= 10; j2 /= 10 {
 					iLen++
 				}
-				xd[0] += int32(mathpow(10, LOG_BASE-i))
+				xd[0] += kVal
 				kLen := 1
 				for j2 := xd[0]; j2 >= 10; j2 /= 10 {
 					kLen++
@@ -509,18 +435,13 @@ func finalise(x *Decimal, sd int, rm RoundingMode, isTruncated ...bool) *Decimal
 				}
 				break
 			} else {
-				xd[xdi] += 1
+				xd[xdi] += kVal
 				if xd[xdi] != BASE {
 					break
 				}
 				xd[xdi] = 0
 				xdi--
-				if xdi < 0 {
-					// Need to prepend.
-					x.d = append([]int32{1}, x.d...)
-					x.e++
-					break
-				}
+				kVal = 1
 			}
 		}
 	}
@@ -564,34 +485,4 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
-}
-
-// absInt returns the absolute value of an int.
-func absInt(a int) int {
-	if a < 0 {
-		return -a
-	}
-	return a
-}
-
-// getLn10 returns LN10 to sd significant digits.
-func getLn10(ctx *Context, sd int, pr ...int) (*Decimal, error) {
-	if sd > LN10_PRECISION {
-		external = true
-		if len(pr) > 0 {
-			ctx.Precision = pr[0]
-		}
-		return nil, ErrPrecisionLimit
-	}
-	x, _ := ctx.New(LN10)
-	return finalise(x, sd, 1), nil
-}
-
-// getPi returns PI to sd significant digits.
-func getPi(ctx *Context, sd int, rm RoundingMode) (*Decimal, error) {
-	if sd > PI_PRECISION {
-		return nil, ErrPrecisionLimit
-	}
-	x, _ := ctx.New(PI)
-	return finalise(x, sd, rm, true), nil
 }

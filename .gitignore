@@ -1,0 +1,46 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+*.prof
+
+# Go workspace
+go.work
+go.work.sum
+
+# Build output
+/bin/
+/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Fuzz cache
+fuzz/corpus/
+fuzz/cache/
+
+# Benchmark output (keep results.json, ignore raw data)
+bench/*.txt
+!bench/methodology.md
+!bench/results.json
+
+# Dependency directories
+vendor/
+
+Unused/

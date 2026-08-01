@@ -306,6 +306,9 @@ func truncateArr(arr *[]int32, length int) bool {
 	return false
 }
 
+// Global flag to track whether internal functions should bypass limits.
+var external = true
+
 // finalise rounds x to sd significant digits using rounding mode rm.
 // Checks for overflow/underflow.
 // Equivalent to finalise in decimal.js.
@@ -353,6 +356,8 @@ func finalise(x *Decimal, sd int, rm RoundingMode, isTruncated ...bool) *Decimal
 	var xdi int
 	var w int32
 	var j int
+
+	var isTrunc bool
 
 	// Is the rounding digit in the first word of xd?
 	if i < 0 {
@@ -408,7 +413,7 @@ func finalise(x *Decimal, sd int, rm RoundingMode, isTruncated ...bool) *Decimal
 	}
 
 	// Are there any non-zero digits after the rounding digit?
-	isTrunc := truncated || sd < 0 ||
+	isTrunc = truncated || sd < 0 ||
 		(xdi+1 < len(xd) && xd[xdi+1] != 0) // simplified check
 	if !isTrunc && j >= 0 {
 		// Check remaining digits in current word.
@@ -423,23 +428,25 @@ func finalise(x *Decimal, sd int, rm RoundingMode, isTruncated ...bool) *Decimal
 	}
 
 	roundUp = int(rm) < 4 &&
-		(rd != 0 || isTrunc) && (rm == 0 || rm == RoundingMode(boolToInt(x.s < 0))*3+RoundingMode(boolToInt(x.s >= 0))*2)
+		(rd != 0 || isTrunc) && (rm == 0 || rm == RoundingMode(boolToInt(x.s < 0)*3+boolToInt(x.s >= 0)*2))
 
 	if !roundUp {
-		roundUp = rd > 5 || (rd == 5 && (rm == 4 || isTrunc || (rm == 6 &&
-			// Check whether the digit to the left of the rounding digit is odd.
-			(func() bool {
-				var leftDigit int32
-				if i > 0 {
-					if j > 0 {
-						leftDigit = w / int32(mathpow(10, digits-j))
-					}
-				} else if xdi > 0 {
-					leftDigit = xd[xdi-1]
-				}
-				return leftDigit%2 != 0
-			}()) ||
-			rm == RoundingMode(boolToInt(x.s < 0))*8+RoundingMode(boolToInt(x.s >= 0))*7))
+		// Determine the rounding mode thresholds.
+		rmNeg := RoundingMode(boolToInt(x.s < 0)*8 + boolToInt(x.s >= 0)*7)
+
+		// Check whether the digit to the left of the rounding digit is odd.
+		var leftDigit int32
+		if i > 0 {
+			if j > 0 {
+				leftDigit = w / int32(mathpow(10, digits-j))
+			}
+		} else if xdi > 0 {
+			leftDigit = xd[xdi-1]
+		}
+		isOddLeft := leftDigit%2 != 0
+
+		roundUp = rd > 5 || (rd == 5 && (rm == 4 || isTrunc ||
+			(rm == 6 && isOddLeft) || rm == rmNeg))
 	}
 
 	if sd < 1 || len(xd) == 0 || xd[0] == 0 {

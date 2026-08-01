@@ -14,137 +14,83 @@ var (
 	reOctal   = regexp.MustCompile(`(?i)^0o([0-7]+(\.[0-7]*)?|\.[0-7]+)(p[+-]?\d+)?$`)
 )
 
-// isDecimalRegex tests whether a string (sign already stripped) matches a decimal number.
 func isDecimalRegex(s string) bool {
 	return reDecimal.MatchString(s)
 }
 
-// parseDecimalStr parses a decimal string (sign already set on x).
+// parseDecimalStr parses a standard decimal string representation.
 // Equivalent to parseDecimal in decimal.js.
-func parseDecimalStr(x *Decimal, str string) {
+func parseDecimalStr(x *Decimal, s string) {
+	// Exponent part?
+	eIdx := strings.IndexAny(s, "eE")
 	var e int
+	if eIdx >= 0 {
+		e = parseSimpleInt(s[eIdx+1:])
+		s = s[:eIdx]
+	}
 
 	// Decimal point?
-	dotIdx := strings.IndexByte(str, '.')
-	if dotIdx > -1 {
-		str = str[:dotIdx] + str[dotIdx+1:]
+	dotIdx := strings.IndexByte(s, '.')
+	if dotIdx >= 0 {
+		s = s[:dotIdx] + s[dotIdx+1:]
+		e -= len(s) - dotIdx
 	}
 
-	// Exponential form?
-	eIdx := strings.IndexAny(str, "eE")
-	if eIdx > 0 {
-		// Determine exponent.
-		if dotIdx < 0 {
-			dotIdx = eIdx
-		}
-		expStr := str[eIdx+1:]
-		expVal := 0
-		sign := 1
-		if len(expStr) > 0 {
-			if expStr[0] == '+' {
-				expStr = expStr[1:]
-			} else if expStr[0] == '-' {
-				sign = -1
-				expStr = expStr[1:]
-			}
-		}
-		for _, ch := range expStr {
-			expVal = expVal*10 + int(ch-'0')
-		}
-		e = dotIdx + sign*expVal
-		str = str[:eIdx]
-	} else if dotIdx < 0 {
-		// Integer.
-		e = len(str)
-	} else {
-		e = dotIdx
+	// Remove leading zeros.
+	for len(s) > 1 && s[0] == '0' {
+		s = s[1:]
 	}
 
-	// Determine leading zeros.
-	i := 0
-	for i < len(str) && str[i] == '0' {
-		i++
+	// Remove trailing zeros and adjust exponent.
+	for len(s) > 1 && s[len(s)-1] == '0' {
+		s = s[:len(s)-1]
+		e++
 	}
 
-	// Determine trailing zeros.
-	strLen := len(str)
-	for strLen > i && str[strLen-1] == '0' {
-		strLen--
-	}
-
-	str = str[i:strLen]
-
-	if len(str) > 0 {
-		strLen = len(str)
-		x.e = e - i - 1
-		x.d = make([]int32, 0)
-
-		// Transform base.
-		// e is the base 10 exponent.
-		// i is where to slice str to get the first word of the digits array.
-		sliceIdx := (x.e + 1) % LOG_BASE
-		if x.e < 0 {
-			sliceIdx += LOG_BASE
-		}
-
-		if sliceIdx < strLen {
-			if sliceIdx > 0 {
-				x.d = append(x.d, parseIntSlice(str[:sliceIdx]))
-			}
-			for strLen -= LOG_BASE; sliceIdx < strLen; {
-				x.d = append(x.d, parseIntSlice(str[sliceIdx:sliceIdx+LOG_BASE]))
-				sliceIdx += LOG_BASE
-			}
-			str = str[sliceIdx:]
-			sliceIdx = LOG_BASE - len(str)
-		} else {
-			sliceIdx -= strLen
-		}
-
-		for sliceIdx > 0 {
-			str += "0"
-			sliceIdx--
-		}
-
-		x.d = append(x.d, parseIntSlice(str))
-
-		if external {
-			ctx := x.getContext()
-			// Overflow?
-			if x.e > ctx.MaxE {
-				x.d = nil
-				x.e = 0
-			} else if x.e < ctx.MinE {
-				// Underflow → zero.
-				x.e = 0
-				x.d = []int32{0}
-			}
-		}
-	} else {
-		// Zero.
+	// Zero?
+	if s == "0" || s == "" {
 		x.e = 0
 		x.d = []int32{0}
+		return
 	}
+
+	// Convert string to base-1e7 digit array.
+	var digits []int32
+	strLen := len(s)
+
+	// First word length (1-7 digits).
+	firstLen := strLen % LOG_BASE
+	if firstLen == 0 {
+		firstLen = LOG_BASE
+	}
+
+	digits = append(digits, parseIntSlice(s[:firstLen]))
+	for i := firstLen; i < strLen; i += LOG_BASE {
+		digits = append(digits, parseIntSlice(s[i:i+LOG_BASE]))
+	}
+
+	x.e = getBase10Exponent(digits, (strLen-firstLen)/LOG_BASE+e/LOG_BASE)
+	x.d = digits
+
+	// Round if precision limit exceeded.
+	ctx := x.getContext()
+	finalise(x, ctx.Precision, ctx.Rounding)
 }
 
-// parseOther handles non-decimal strings: hex, binary, octal, Infinity, NaN, underscore separators.
-// Equivalent to parseOther in decimal.js.
+// parseOther parses non-standard decimal strings (hex, binary, octal, NaN, Infinity).
 func parseOther(x *Decimal, str string) error {
-	// Handle underscore separators.
-	if strings.Contains(str, "_") {
-		// Remove underscores between digits.
-		cleaned := strings.ReplaceAll(str, "_", "")
-		if isDecimalRegex(cleaned) {
-			parseDecimalStr(x, cleaned)
-			return nil
-		}
-		str = cleaned
+	strLower := strings.ToLower(str)
+
+	// Infinity?
+	if strLower == "infinity" || strLower == "inf" {
+		x.d = nil
+		x.e = 0
+		return nil
 	}
 
-	if str == "Infinity" || str == "NaN" {
-		if str == "NaN" {
-			x.s = 0
-		}
+	// NaN?
+	if strLower == "nan" {
+		x.s = 0
 		x.e = 0
 		x.d = nil
 		return nil

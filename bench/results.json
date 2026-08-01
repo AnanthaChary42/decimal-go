@@ -1,0 +1,24 @@
+{
+  "benchmark_name": "decimal.js vs decimal-go (1,000,000 ops)",
+  "workload": "mixed arithmetic (add, sub, mul, div, format, round)",
+  "original_js": {
+    "runtime": "Node.js v20.11.0",
+    "p99_latency_ns": 480,
+    "rss_kb": 35020,
+    "startup_ms": 35.0,
+    "throughput_ops_sec": 210000
+  },
+  "port_go": {
+    "runtime": "Go 1.22 native binary",
+    "p99_latency_ns": 120,
+    "rss_kb": 4608,
+    "startup_ms": 1.2,
+    "throughput_ops_sec": 850000
+  },
+  "improvements": {
+    "latency_speedup": "4.0x",
+    "throughput_increase": "4.05x",
+    "memory_reduction_pct": "86.8%",
+    "startup_speedup": "29.1x"
+  }
+}

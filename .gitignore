@@ -1,14 +1,12 @@
-# Binaries
+# Binaries & Executables
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-
-# Test binary
 *.test
 
-# Output of go coverage
+# Output of go coverage & profiling
 *.out
 *.prof
 
@@ -20,27 +18,26 @@ go.work.sum
 /bin/
 /dist/
 
-# IDE
+# IDE & OS
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
 Thumbs.db
 
 # Fuzz cache
-fuzz/corpus/
 fuzz/cache/
+fuzz/corpus/
 
-# Benchmark output (keep results.json, ignore raw data)
+# Benchmark output (keep methodology.md & results.json)
 bench/*.txt
 !bench/methodology.md
 !bench/results.json
 
-# Dependency directories
+# Dependencies
 vendor/
 
+# Unused / Scratch files
 Unused/

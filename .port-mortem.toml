@@ -1,4 +1,4 @@
-﻿track = "H"
+track = "H"
 source_repo = "https://github.com/MikeMcl/decimal.js"
 source_pair = "JavaScript -> Go"
 kickoff_hash_file = "tests/original/test-suite.sha256"

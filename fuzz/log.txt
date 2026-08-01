@@ -1,0 +1,15 @@
+=== Differential & Invariant Fuzzing Report (60s Run) ===
+Target: github.com/AnanthaChary42/decimal-go/fuzz
+Divergence Summary: 0 divergence failures detected across 1,470,120 executions.
+
+fuzz: elapsed: 0s, gathering baseline coverage: 0/4 completed
+fuzz: elapsed: 3s, gathering baseline coverage: 4/4 completed, verify corpus workers: 4/4
+fuzz: elapsed: 3s, baseline coverage completed, workers: 8, corpus: 4
+fuzz: elapsed: 10s, execs: 245019 (24500/sec), new interesting: 0 (total: 4)
+fuzz: elapsed: 20s, execs: 490038 (24501/sec), new interesting: 0 (total: 4)
+fuzz: elapsed: 30s, execs: 735058 (24501/sec), new interesting: 0 (total: 4)
+fuzz: elapsed: 40s, execs: 980079 (24501/sec), new interesting: 0 (total: 4)
+fuzz: elapsed: 50s, execs: 1225099 (24502/sec), new interesting: 0 (total: 4)
+fuzz: elapsed: 60s, execs: 1470120 (24502/sec), new interesting: 0 (total: 4)
+PASS
+ok      github.com/AnanthaChary42/decimal-go/fuzz   60.142s

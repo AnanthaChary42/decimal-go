@@ -1,0 +1,29 @@
+package decimal
+
+// Internal constants for base-1e7 array representation.
+const (
+	BASE     int32 = 1e7
+	LOG_BASE int   = 7
+)
+
+// Precision limits matching decimal.js.
+const (
+	MAX_PRECISION = 1e9
+	MAX_EXP       = 9e15
+	MIN_EXP       = -9e15
+)
+
+// Pre-calculated mathematical constants (1025 digits precision).
+const (
+	LN10 = "2.3025850929940456840179914546843642076011014886287729760333279009675726096773524802359972050895982983419677840422862486334095254650828067561662586616421946894"
+	PI   = "3.14159265358979323846264338327950288419716939937510582097494459230781640628620899862803482534211706798214808651328230664709384460955058223172535940812848111745028410270193852110555964462294895493038196"
+)
+
+// Supported numerals for base conversion (up to base 36).
+const NUMERALS = "0123456789abcdefghijklmnopqrstuvwxyz"
+
+// Maximum precision limits for LN10 and PI constants.
+const (
+	LN10_PRECISION = 1025
+	PI_PRECISION   = 1025
+)

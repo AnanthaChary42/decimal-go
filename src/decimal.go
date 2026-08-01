@@ -25,53 +25,36 @@ const (
 // Context holds configuration for decimal operations.
 // Equivalent to the Decimal constructor's configuration in decimal.js.
 type Context struct {
-	Precision int          // Maximum number of significant digits. Default: 20.
-	Rounding  RoundingMode // Rounding mode. Default: RoundHalfUp (4).
-	ToExpNeg  int          // Exponent at/below which toString uses exponential notation. Default: -7.
-	ToExpPos  int          // Exponent at/above which toString uses exponential notation. Default: 21.
-	MinE      int          // Minimum exponent (underflow to zero). Default: -EXP_LIMIT.
-	MaxE      int          // Maximum exponent (overflow to Infinity). Default: EXP_LIMIT.
-	Modulo    RoundingMode // Modulo mode. Default: RoundDown (1).
+	Precision int          // Significant digits, default 20
+	Rounding  RoundingMode // Default RoundHalfUp (4)
+	ToExpNeg  int          // Exponent threshold for exponential notation (neg), default -7
+	ToExpPos  int          // Exponent threshold for exponential notation (pos), default 21
+	MinE      int          // Minimum exponent, default -9e15
+	MaxE      int          // Maximum exponent, default 9e15
+	Modulo    RoundingMode // Modulo mode, default RoundFloor (3)
 }
 
-// DefaultContext returns a new Context with default settings matching decimal.js defaults.
-func DefaultContext() *Context {
-	return &Context{
-		Precision: 20,
-		Rounding:  RoundHalfUp,
-		ToExpNeg:  -7,
-		ToExpPos:  21,
-		MinE:      -EXP_LIMIT,
-		MaxE:      EXP_LIMIT,
-		Modulo:    RoundDown,
-	}
+// Default Context matching decimal.js default settings.
+var defaultCtx = &Context{
+	Precision: 20,
+	Rounding:  RoundHalfUp,
+	ToExpNeg:  -7,
+	ToExpPos:  21,
+	MinE:      MIN_EXP,
+	MaxE:      MAX_EXP,
+	Modulo:    RoundFloor,
 }
 
 // Decimal represents an arbitrary-precision decimal number.
-// Internal representation matches decimal.js:
-//   - d: digit array in base 1e7 (nil for NaN/Infinity)
-//   - e: base-10 exponent of the most significant digit
-//   - s: sign (-1 or 1; 0 for NaN)
+// Mirrored after decimal.js internal structure.
 type Decimal struct {
-	d   []int32  // digit array, base 1e7; nil = NaN or Infinity
-	e   int      // exponent
-	s   int8     // sign: 1, -1, or 0 (NaN)
-	ctx *Context // configuration context
+	s   int      // Sign: 1 (positive), -1 (negative), 0 (NaN)
+	e   int      // Exponent (base 10)
+	d   []int32  // Digits array (base 1e7)
+	ctx *Context // Configuration context for operations
 }
 
-// external controls whether finalise should check for overflow/underflow.
-// Matches the `external` variable in decimal.js. Some internal operations
-// temporarily set this to false.
-var external = true
-
-// Package-level default context used when no context is specified.
-var defaultCtx = DefaultContext()
-
-// ---- Constructors ----
-
 // New creates a new Decimal from a string using the default context.
-// Accepts decimal ("123.456"), exponential ("1.23e+5"), hex ("0xff"),
-// binary ("0b101"), octal ("0o77"), "Infinity", "NaN", and underscore separators.
 func New(s string) (*Decimal, error) {
 	return defaultCtx.New(s)
 }
@@ -98,13 +81,14 @@ func (ctx *Context) New(s string) (*Decimal, error) {
 
 	if isDecimalRegex(s) {
 		parseDecimalStr(x, s)
-	} else {
-		err := parseOther(x, s)
-		if err != nil {
-			return nil, err
-		}
+		return x, nil
 	}
 
+	// Try base conversion (hex, binary, octal) or special values (Infinity, NaN).
+	err := parseOther(x, s)
+	if err != nil {
+		return nil, err
+	}
 	return x, nil
 }
 
@@ -131,13 +115,8 @@ func (ctx *Context) NewFromInt64(v int64) *Decimal {
 		x.s = 1
 	}
 
-	// Fast path for small integers (< 1e7).
 	if v < int64(BASE) {
-		e := 0
-		for i := v; i >= 10; i /= 10 {
-			e++
-		}
-		x.e = e
+		x.e = getBase10Exponent([]int32{int32(v)}, 0)
 		x.d = []int32{int32(v)}
 		return x
 	}
@@ -169,7 +148,7 @@ func (ctx *Context) NewFromFloat64(v float64) (*Decimal, error) {
 
 	if math.IsNaN(v) {
 		x.s = 0
-		x.e = 0 // JS uses NaN for e, we use 0 for NaN decimals
+		x.e = 0
 		x.d = nil
 		return x, nil
 	}
@@ -199,52 +178,27 @@ func (ctx *Context) NewFromFloat64(v float64) (*Decimal, error) {
 
 // copy creates a deep copy of the Decimal.
 func (x *Decimal) copy() *Decimal {
-	y := &Decimal{
-		e:   x.e,
+	c := &Decimal{
 		s:   x.s,
+		e:   x.e,
 		ctx: x.ctx,
 	}
 	if x.d != nil {
-		y.d = make([]int32, len(x.d))
-		copy(y.d, x.d)
+		c.d = make([]int32, len(x.d))
+		copy(c.d, x.d)
 	}
-	return y
+	return c
 }
 
-// copyWithCtx creates a copy of src using the context from x.
-// This mirrors the JS pattern: `y = new x.constructor(src)`.
-func (x *Decimal) newFromDecimal(src *Decimal) *Decimal {
-	y := &Decimal{
-		s:   src.s,
-		ctx: x.ctx,
+// getContext returns the Decimal's context or defaultCtx if nil.
+func (x *Decimal) getContext() *Context {
+	if x.ctx != nil {
+		return x.ctx
 	}
-
-	if external {
-		if src.d == nil || src.e > x.ctx.MaxE {
-			// Infinity.
-			y.d = nil
-			y.e = 0
-		} else if src.e < x.ctx.MinE {
-			// Zero.
-			y.e = 0
-			y.d = []int32{0}
-		} else {
-			y.e = src.e
-			y.d = make([]int32, len(src.d))
-			copy(y.d, src.d)
-		}
-	} else {
-		y.e = src.e
-		if src.d != nil {
-			y.d = make([]int32, len(src.d))
-			copy(y.d, src.d)
-		}
-	}
-
-	return y
+	return defaultCtx
 }
 
-// ---- Predicates ----
+// Predicates matching decimal.js instance methods.
 
 // IsFinite returns true if x is a finite number (not NaN or Infinity).
 func (x *Decimal) IsFinite() bool {
@@ -256,19 +210,19 @@ func (x *Decimal) IsNaN() bool {
 	return x.s == 0
 }
 
-// IsZero returns true if x is zero (positive or negative).
+// IsZero returns true if x is zero.
 func (x *Decimal) IsZero() bool {
-	return x.d != nil && x.d[0] == 0
+	return x.d != nil && len(x.d) == 1 && x.d[0] == 0
 }
 
-// IsNeg returns true if x is negative.
-func (x *Decimal) IsNeg() bool {
-	return x.s < 0
-}
-
-// IsPos returns true if x is positive.
+// IsPos returns true if x is positive (including +0).
 func (x *Decimal) IsPos() bool {
 	return x.s > 0
+}
+
+// IsNeg returns true if x is negative (including -0).
+func (x *Decimal) IsNeg() bool {
+	return x.s < 0
 }
 
 // IsInt returns true if x is an integer.
@@ -277,22 +231,17 @@ func (x *Decimal) IsInt() bool {
 }
 
 // Sd returns the number of significant digits.
-// If z is true and x is an integer, trailing zeros of the integer part are counted.
-func (x *Decimal) Sd(z ...bool) int {
+func (x *Decimal) Sd() int {
 	if x.d == nil {
-		return 0 // NaN
+		return 0 // NaN or Infinity
 	}
-	k := getPrecision(x.d)
-	if len(z) > 0 && z[0] && x.e+1 > k {
-		k = x.e + 1
-	}
-	return k
+	return getPrecision(x.d)
 }
 
 // Dp returns the number of decimal places.
 func (x *Decimal) Dp() int {
 	if x.d == nil {
-		return 0 // NaN
+		return 0 // NaN or Infinity
 	}
 	w := len(x.d) - 1
 	n := (w - ifloorDiv(x.e, LOG_BASE)) * LOG_BASE
@@ -305,16 +254,23 @@ func (x *Decimal) Dp() int {
 			n--
 		}
 	}
+
+	if x.e < 0 {
+		return n
+	}
 	if n < 0 {
-		n = 0
+		return 0
 	}
 	return n
 }
 
-// getContext returns the context for this decimal, using the default if nil.
-func (x *Decimal) getContext() *Context {
-	if x.ctx != nil {
-		return x.ctx
+// Helper constructors.
+
+func (ctx *Context) newFromDecimal(y *Decimal) *Decimal {
+	if y.ctx == ctx {
+		return y.copy()
 	}
-	return defaultCtx
+	c := y.copy()
+	c.ctx = ctx
+	return c
 }

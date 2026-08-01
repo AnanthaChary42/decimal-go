@@ -110,6 +110,10 @@ func (ctx *Context) NewFromInt64(v int64) *Decimal {
 
 	if v < 0 {
 		x.s = -1
+		if v == -v { // math.MinInt64: can't negate without overflow
+			parseDecimalStr(x, strconv.FormatInt(v, 10)[1:]) // strip '-', parse digits
+			return x
+		}
 		v = -v
 	} else {
 		x.s = 1

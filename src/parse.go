@@ -8,7 +8,7 @@ import (
 
 // Regex patterns for parsing, matching decimal.js patterns.
 var (
-	reDecimal = regexp.MustCompile(`^(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$`)
+	reDecimal = regexp.MustCompile(`(?i)^(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$`)
 	reBinary  = regexp.MustCompile(`(?i)^0b([01]+(\.[01]*)?|\.[01]+)(p[+-]?\d+)?$`)
 	reHex     = regexp.MustCompile(`(?i)^0x([0-9a-f]+(\.[0-9a-f]*)?|\.[0-9a-f]+)(p[+-]?\d+)?$`)
 	reOctal   = regexp.MustCompile(`(?i)^0o([0-7]+(\.[0-7]*)?|\.[0-7]+)(p[+-]?\d+)?$`)
@@ -21,55 +21,96 @@ func isDecimalRegex(s string) bool {
 // parseDecimalStr parses a standard decimal string representation.
 // Equivalent to parseDecimal in decimal.js.
 func parseDecimalStr(x *Decimal, s string) {
-	// Exponent part?
-	eIdx := strings.IndexAny(s, "eE")
 	var e int
-	if eIdx >= 0 {
-		e = parseSimpleInt(s[eIdx+1:])
-		s = s[:eIdx]
-	}
 
-	// Decimal point?
+	// Find decimal point position and scientific notation exponent.
 	dotIdx := strings.IndexByte(s, '.')
-	if dotIdx >= 0 {
-		s = s[:dotIdx] + s[dotIdx+1:]
-		e -= len(s) - dotIdx
+	eIdx := strings.IndexAny(s, "eE")
+
+	if eIdx >= 0 {
+		if dotIdx < 0 {
+			dotIdx = eIdx
+		}
+		dotIdx += parseSimpleInt(s[eIdx+1:])
+		s = s[:eIdx]
+	} else if dotIdx < 0 {
+		dotIdx = len(s)
 	}
 
-	// Remove leading zeros.
-	for len(s) > 1 && s[0] == '0' {
-		s = s[1:]
+	// Remove the decimal point from the string.
+	actualDot := strings.IndexByte(s, '.')
+	if actualDot >= 0 {
+		s = s[:actualDot] + s[actualDot+1:]
 	}
 
-	// Remove trailing zeros and adjust exponent.
-	for len(s) > 1 && s[len(s)-1] == '0' {
-		s = s[:len(s)-1]
-		e++
+	// Determine leading zeros.
+	i := 0
+	for i < len(s) && s[i] == '0' {
+		i++
 	}
 
-	// Zero?
-	if s == "0" || s == "" {
+	// Determine trailing zeros.
+	sLen := len(s)
+	for sLen > i && s[sLen-1] == '0' {
+		sLen--
+	}
+	s = s[i:sLen]
+
+	if len(s) == 0 {
+		// Zero.
 		x.e = 0
 		x.d = []int32{0}
 		return
 	}
 
-	// Convert string to base-1e7 digit array.
-	var digits []int32
 	strLen := len(s)
+	e = dotIdx - i - 1 // base-10 exponent
+	x.e = e
 
-	// First word length (1-7 digits).
-	firstLen := strLen % LOG_BASE
-	if firstLen == 0 {
-		firstLen = LOG_BASE
+	// Calculate first word length based on exponent alignment.
+	// This is the critical step that ensures words are aligned to LOG_BASE boundaries.
+	firstLen := (e + 1) % LOG_BASE
+	if e < 0 {
+		firstLen += LOG_BASE
+	}
+	if firstLen < 0 {
+		firstLen += LOG_BASE
 	}
 
-	digits = append(digits, parseIntSlice(s[:firstLen]))
-	for i := firstLen; i < strLen; i += LOG_BASE {
-		digits = append(digits, parseIntSlice(s[i:i+LOG_BASE]))
+	var digits []int32
+
+	if firstLen < strLen {
+		// First word (partial, only if firstLen > 0).
+		if firstLen > 0 {
+			digits = append(digits, parseIntSlice(s[:firstLen]))
+		}
+
+		// Middle words (full LOG_BASE chunks).
+		ii := firstLen
+		limit := strLen - LOG_BASE
+		for ii < limit {
+			digits = append(digits, parseIntSlice(s[ii:ii+LOG_BASE]))
+			ii += LOG_BASE
+		}
+
+		// Last word: remaining digits padded with trailing zeros.
+		s = s[ii:]
+		pad := LOG_BASE - len(s)
+		for pad > 0 {
+			s += "0"
+			pad--
+		}
+		digits = append(digits, parseIntSlice(s))
+	} else {
+		// The entire string fits in one word, pad with trailing zeros.
+		pad := firstLen - strLen
+		for pad > 0 {
+			s += "0"
+			pad--
+		}
+		digits = append(digits, parseIntSlice(s))
 	}
 
-	x.e = getBase10Exponent(digits, (strLen-firstLen)/LOG_BASE+e/LOG_BASE)
 	x.d = digits
 
 	// Round if precision limit exceeded.

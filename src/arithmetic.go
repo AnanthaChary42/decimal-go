@@ -97,11 +97,13 @@ func (x *Decimal) Add(y *Decimal) *Decimal {
 	if i != 0 {
 		var d []int32
 		var length int
+		xdSmaller := false
 
 		if i < 0 {
 			d = xd
 			i = -i
 			length = len(yd)
+			xdSmaller = true
 		} else {
 			d = make([]int32, len(yd))
 			copy(d, yd)
@@ -137,7 +139,7 @@ func (x *Decimal) Add(y *Decimal) *Decimal {
 			d2[len(reversed)-1-idx] = reversed[idx]
 		}
 
-		if i < 0 {
+		if xdSmaller {
 			// d was xd
 			xd = d2
 		} else {

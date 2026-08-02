@@ -107,22 +107,23 @@ func divide(x, y *Decimal, pr int, rm RoundingMode, dp bool, base int) *Decimal 
 	sd = sd/logBase + 2
 	i = 0
 
+	base64 := int64(base)
 	base32 := int32(base)
 
 	if yL == 1 {
 		// Divisor < 1e7.
-		k := int32(0)
-		yd0 := yd[0]
+		k := int64(0)
+		yd0 := int64(yd[0])
 		sd++
 
 		for (i < xL || k != 0) && sd > 0 {
-			var t int32
+			var t int64
 			if i < xL {
-				t = k*base32 + xd[i]
+				t = k*base64 + int64(xd[i])
 			} else {
-				t = k * base32
+				t = k * base64
 			}
-			qd = append(qd, t/yd0)
+			qd = append(qd, int32(t/yd0))
 			k = t % yd0
 			i++
 			sd--
@@ -195,12 +196,12 @@ func divide(x, y *Decimal, pr int, rm RoundingMode, dp bool, base int) *Decimal 
 
 		if cmp < 0 {
 			// Divisor < remainder. Calculate trial digit, k.
-			rem0 := rem[0]
+			rem0 := int64(rem[0])
 			if yL != remL {
-				rem0 = rem0*base32 + safeGet(rem, 1)
+				rem0 = rem0*int64(base32) + int64(safeGet(rem, 1))
 			}
 
-			k = rem0 / yd0
+			k = int32(rem0 / int64(yd0))
 
 			// prod will hold the product to subtract from remainder.
 			var prod []int32
@@ -352,15 +353,15 @@ func multiplyInteger(x []int32, k int32, base int32) []int32 {
 	result := make([]int32, len(x))
 	copy(result, x)
 
-	var carry int32
+	var carry int64
 	for i := len(result) - 1; i >= 0; i-- {
-		temp := result[i]*k + carry
-		result[i] = temp % base
-		carry = temp / base
+		temp := int64(result[i])*int64(k) + carry
+		result[i] = int32(temp % int64(base))
+		carry = temp / int64(base)
 	}
 
 	if carry > 0 {
-		result = append([]int32{carry}, result...)
+		result = append([]int32{int32(carry)}, result...)
 	}
 
 	return result

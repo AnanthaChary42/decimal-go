@@ -209,6 +209,7 @@ func parseOther(x *Decimal, str string) error {
 	if isFloat {
 		fracLen := len(str) - dotIdx
 		divisor := intPow(ctx, ctx.NewFromInt64(int64(base)), fracLen, fracLen*2)
+		external = false // intPow resets external to true; restore it for divide
 		result := divide(x, divisor, len(str)*4, RoundingMode(0), false, 0)
 		x.d = result.d
 		x.e = result.e

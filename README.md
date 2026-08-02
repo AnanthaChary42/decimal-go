@@ -5,6 +5,7 @@ JavaScript natively lacks an arbitrary-precision decimal type, forcing financial
 ## Track H Self-Justification Statement
 
 This repository is submitted under **Track H (Open Pair: JavaScript → Go)**:
+
 - **Source Repository**: [MikeMcl/decimal.js](https://github.com/MikeMcl/decimal.js) (v10.6.0, 4,953 lines of JavaScript, MIT License).
 - **Target Language**: Go 1.22 (Standard Library).
 - **Justification**: While `decimal.js` is the gold standard for JavaScript decimal arithmetic, its dynamic design relies on mutable global state (`Decimal.precision = 20`) and prototype-based object allocation. This Go port preserves the exact base-1e7 word array (`[]int32`) internal algorithm and IEEE 754-2008 rounding mode semantics while introducing immutable `Context` structs, explicit `(Decimal, error)` error handling, and complete independence from JavaScript runtime environments.
@@ -52,36 +53,35 @@ decimal-go-Port/
 All commands can be executed directly from the repo root without changing directories:
 
 ### Build Package
+
 ```bash
 make build
 # Direct Go command: go build ./src/...
 ```
 
 ### Run Test Suite
+
 ```bash
 make test
 # Direct Go command: go test ./tests/port/... -v
 ```
 
 ### Run Performance Benchmarks
+
 ```bash
 make bench
 # Direct Go command: go test ./src/... -bench=. -benchmem
 ```
 
 ### Run Differential Fuzzer (60s+)
+
 ```bash
 make fuzz
 # Direct Go command: go test ./fuzz/... -fuzz=FuzzDecimal -fuzztime=60s
 ```
 
 ### Docker Containerized Build & Test
+
 ```bash
 docker build -t decimal-go-port .
 ```
-
----
-
-## Demo Video
-
-- **5-Minute Live Demo Video**: [https://youtu.be/decimal-go-port-demo](https://youtu.be/decimal-go-port-demo) *(Live demonstration showing original test suite passing against the Go port)*

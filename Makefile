@@ -12,7 +12,7 @@ test:
 
 bench:
 	@echo "==> Running benchmarks..."
-	go test ./src/... -bench=. -benchmem
+	go test ./fuzz/... -bench=. -benchmem
 
 fuzz:
 	@echo "==> Running differential fuzzing harness (60s)..."

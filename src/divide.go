@@ -96,9 +96,16 @@ func divide(x, y *Decimal, pr int, rm RoundingMode, dp bool, base int) *Decimal 
 	}
 
 	if sd < 0 {
-		qd = append(qd, 1)
-		q.d = qd
-		q.e = e
+		roundUp := (rm == RoundUp) ||
+			(rm == RoundCeil && sign > 0) ||
+			(rm == RoundFloor && sign < 0)
+		if roundUp {
+			q.d = []int32{1}
+			q.e = e
+		} else {
+			q.d = []int32{0}
+			q.e = 0
+		}
 		inexact = true
 		return q
 	}

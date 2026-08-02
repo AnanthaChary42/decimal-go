@@ -102,6 +102,12 @@ func (x *Decimal) String() string {
 	return str
 }
 
+// ToString is an alias for String(), matching the JS Decimal.prototype.toString() name.
+func (x *Decimal) ToString() string {
+	return x.String()
+}
+
+
 // ValueOf returns a string representation where negative zero includes the minus sign.
 // Equivalent to valueOf/toJSON in decimal.js.
 func (x *Decimal) ValueOf() string {

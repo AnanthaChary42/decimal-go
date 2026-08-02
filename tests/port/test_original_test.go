@@ -165,7 +165,7 @@ func TestOriginal_Abs_ExpFormat(t *testing.T) {
 }
 
 
-func TestOriginal_Constructor(t *testing.T) {
+func TestLegacy_Constructor(t *testing.T) {
 	tests := []struct {
 		input    string
 		expected string
@@ -206,7 +206,7 @@ func TestOriginal_Constructor(t *testing.T) {
 	}
 }
 
-func TestOriginal_ToString(t *testing.T) {
+func TestLegacy_ToString(t *testing.T) {
 	tests := []struct {
 		input    string
 		expected string

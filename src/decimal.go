@@ -3,7 +3,6 @@ package decimal
 import (
 	"math"
 	"strconv"
-	"strings"
 )
 
 // RoundingMode specifies how rounding is performed.
@@ -32,6 +31,7 @@ type Context struct {
 	MinE      int          // Minimum exponent (underflow to zero). Default: -EXP_LIMIT.
 	MaxE      int          // Maximum exponent (overflow to Infinity). Default: EXP_LIMIT.
 	Modulo    RoundingMode // Modulo mode. Default: RoundDown (1).
+	Crypto    bool         // Whether to use crypto for random. Default: false.
 }
 
 // DefaultContext returns a new Context with default settings matching decimal.js defaults.
@@ -44,6 +44,7 @@ func DefaultContext() *Context {
 		MinE:      -EXP_LIMIT,
 		MaxE:      EXP_LIMIT,
 		Modulo:    RoundDown,
+		Crypto:    false,
 	}
 }
 
@@ -77,9 +78,10 @@ func New(s string) (*Decimal, error) {
 }
 
 // New creates a new Decimal from a string using this context.
+// Unlike Go convention, whitespace is NOT trimmed — matching JS Decimal(n) which
+// rejects strings with leading/trailing whitespace.
 func (ctx *Context) New(s string) (*Decimal, error) {
 	x := &Decimal{ctx: ctx}
-	s = strings.TrimSpace(s)
 
 	if len(s) == 0 {
 		return nil, newInvalidArgError(s)
@@ -294,6 +296,12 @@ func (x *Decimal) Sd(z ...bool) int {
 	return k
 }
 
+// SD is an alias for Sd (significant digits).
+func (x *Decimal) SD(z ...bool) int {
+	return x.Sd(z...)
+}
+
+
 // Dp returns the number of decimal places.
 func (x *Decimal) Dp() int {
 	if x.d == nil {
@@ -322,4 +330,32 @@ func (x *Decimal) getContext() *Context {
 		return x.ctx
 	}
 	return defaultCtx
+}
+
+// ---- Accessors for test inspection (assertEqualProps) ----
+
+// D returns the internal digit array (base 1e7). Nil for NaN/Infinity.
+func (x *Decimal) D() []int32 {
+	if x.d == nil {
+		return nil
+	}
+	// Return a copy to prevent external mutation.
+	cpy := make([]int32, len(x.d))
+	copy(cpy, x.d)
+	return cpy
+}
+
+// E returns the internal base-10 exponent.
+func (x *Decimal) E() int {
+	return x.e
+}
+
+// S returns the internal sign (-1, 0 for NaN, 1).
+func (x *Decimal) S() int8 {
+	return x.s
+}
+
+// GetContext returns the context associated with this Decimal.
+func (x *Decimal) GetContext() *Context {
+	return x.getContext()
 }

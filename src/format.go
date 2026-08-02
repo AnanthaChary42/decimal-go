@@ -107,7 +107,6 @@ func (x *Decimal) ToString() string {
 	return x.String()
 }
 
-
 // ValueOf returns a string representation where negative zero includes the minus sign.
 // Equivalent to valueOf/toJSON in decimal.js.
 func (x *Decimal) ValueOf() string {
@@ -156,11 +155,7 @@ func (x *Decimal) ToFixed(dp int, rm ...RoundingMode) string {
 // rounded to dp decimal places using the specified rounding mode.
 func (x *Decimal) ToExponential(dp int, rm ...RoundingMode) string {
 	if !x.IsFinite() {
-		s := nonFiniteToString(x)
-		if x.IsNeg() && !x.IsZero() {
-			return "-" + s
-		}
-		return s
+		return nonFiniteToString(x)
 	}
 
 	ctx := x.getContext()
@@ -188,11 +183,7 @@ func (x *Decimal) ToExponential(dp int, rm ...RoundingMode) string {
 // using exponential notation if sd is less than the integer part length.
 func (x *Decimal) ToPrecision(sd int, rm ...RoundingMode) string {
 	if !x.IsFinite() {
-		s := nonFiniteToString(x)
-		if x.IsNeg() && !x.IsZero() {
-			return "-" + s
-		}
-		return s
+		return nonFiniteToString(x)
 	}
 
 	ctx := x.getContext()
@@ -241,4 +232,3 @@ func (x *Decimal) ToNumber() float64 {
 	}
 	return f
 }
-

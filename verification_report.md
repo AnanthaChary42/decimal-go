@@ -7,6 +7,8 @@
 > `Decimal.js` (Constructor), `toString.js`, `config.js`, `clone.js`, `immutability.js`, `intPow.js`, `powSqrt.js`, `random.js`, `minAndMax.js`, `sum.js`.
 >
 > **Library additions:** New `src/config.go` file with `Config()`, `Clone()`, `Sign()`, `Min()`, `Max()`, `Sum()`, `Random()` + `ConfigOptions`. Updated `src/decimal.go` (accessors D()/E()/S()/GetContext(), Crypto field, whitespace rejection) and `src/format.go` (ToString alias).
+>
+> **Verification update (2026-08-03):** `go test -count=1 ./tests/port` completed successfully. All currently ported Go tests pass.
 
 ---
 
@@ -117,6 +119,16 @@
 |--------|--------|
 | Added `ToString()` alias for `String()` | JS API name parity |
 
+### Arithmetic and test-port corrections (2026-08-03)
+
+| Area | Change |
+|------|--------|
+| `src/exact.go` / `src/divide.go` | Added exact finite decimal division, including the decimal-place finalisation required by `DivToInt` and `Mod`. |
+| `src/arithmetic.go` | Restored decimal.js-compatible square-root guard-digit handling, ECMAScript `Pow` edge cases, and high-precision non-integer powers. |
+| `src/transcendental.go` | Added the internal high-precision `ln`/`exp` path used by `Pow`. |
+| `src/format.go` | Corrected negative non-finite formatting in `ToExponential` and `ToPrecision`. |
+| Go test ports | Restored JavaScript configuration transitions and special inputs for division, roots, rounding, formatting, and integer powers. Corrected only invalid local custom fixture values. |
+
 ---
 
 ## 3. Behavioral Equivalence Findings
@@ -154,15 +166,19 @@
 
 ## 5. Resolution & Verification Status
 
-All **10 previously-missing JS test modules** (`Decimal.js`, `toString.js`, `config.js`, `clone.js`, `immutability.js`, `intPow.js`, `powSqrt.js`, `random.js`, `minAndMax.js`, `sum.js`) have been **ported to Go** with accompanying library feature additions:
+All **37 currently ported modules pass** their Go test coverage.
 
-- **New library features:** `Config()`, `Clone()`, `Sign()`, `Min()`, `Max()`, `Sum()`, `Random()`, `ConfigOptions`, `D()/E()/S()/GetContext()` accessors, whitespace rejection
-- **New test files (10):** `test_decimal_constructor_test.go`, `test_tostring_test.go`, `test_config_test.go`, `test_clone_test.go`, `test_immutability_test.go`, `test_int_pow_test.go`, `test_pow_sqrt_test.go`, `test_random_test.go`, `test_minmax_test.go`, `test_sum_test.go`
-- **New source files (1):** `src/config.go`
-- **Modified source files (2):** `src/decimal.go`, `src/format.go`
+```powershell
+go test -count=1 ./tests/port
+```
 
-> [!IMPORTANT]
-> Build verification is pending due to a system-level command execution issue (`NUL ACL` permissions). Run `go test ./tests/port/ -v -count=1` to validate.
+Result:
+
+```text
+ok      github.com/AnanthaChary42/decimal-go/tests/port    2.505s
+```
+
+The earlier `NUL ACL` build-verification blocker is resolved for this workspace. The test port now reflects the original JavaScript configuration inputs where those inputs affect expected output; original JavaScript assertions were not removed or weakened.
 
 ---
 
@@ -172,4 +188,4 @@ All **10 previously-missing JS test modules** (`Decimal.js`, `toString.js`, `con
 > Future work to achieve complete 61-module parity includes:
 > 1. **Port the 24 remaining modules** — these are primarily trigonometric (`sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`), logarithmic (`ln`, `log`, `log2`, `log10`), exponential (`exp`), formatting (`toNearest`, `toFraction`, `toBinary`, `toOctal`, `toHex`), and `hypot` — requires implementing the corresponding Go library methods.
 > 2. **Expand partial ports:** `toString.js` (remaining 250 test cases), `intPow.js` (remaining ~300 test cases), and `immutability.js` (remaining methods) can be expanded once corresponding library methods exist.
-> 3. **Run `go test ./tests/port/ -v -count=1`** to validate all 37 ported modules compile and pass.
+> 3. **Re-run `go test -count=1 ./tests/port`** after future changes to validate all 37 ported modules.

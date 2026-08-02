@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math"
 	"strconv"
+	"strings"
 )
 
 // Abs returns a new Decimal whose value is the absolute value of x.
@@ -566,7 +567,14 @@ func (x *Decimal) Pow(y *Decimal) *Decimal {
 
 	// Either ±Infinity, NaN or ±0?
 	if x.d == nil || y.d == nil || x.d[0] == 0 || y.d[0] == 0 {
-		v := math.Pow(x.ToNumber(), yn)
+		xn := x.ToNumber()
+		v := math.Pow(xn, yn)
+
+		// Go's math.Pow differs from ECMAScript for ±1 raised to an
+		// infinite exponent. decimal.js follows the ECMAScript result, NaN.
+		if math.IsInf(yn, 0) && math.Abs(xn) == 1 {
+			v = math.NaN()
+		}
 		r, _ := ctx.NewFromFloat64(v)
 		return r
 	}
@@ -624,16 +632,39 @@ func (x *Decimal) Pow(y *Decimal) *Decimal {
 			xCopy.s = s
 			return xCopy
 		}
+
+		// Subsequent logarithm/exponential work is performed on |x|; restore
+		// the sign after the integer-power result has been calculated.
+		xCopy.s = 1
 	}
 
-	// For now, use float64 approximation for complex pow.
-	// TODO: implement full precision pow using exp(y*ln(x)).
-	result := math.Pow(x.ToNumber(), yn)
-	r, _ := ctx.NewFromFloat64(result)
-	if r != nil {
+	// Special case: pow(x, 0.5) == sqrt(x), pow(x, -0.5) == 1/sqrt(x)
+	// This avoids the float64 fallback which overflows/underflows for extreme exponents.
+	halfPos, _ := ctx.New("0.5")
+	halfNeg, _ := ctx.New("-0.5")
+	if y.Eq(halfPos) {
+		r := xCopy.Sqrt()
 		r.s = s
+		return r
+	}
+	if y.Eq(halfNeg) {
+		r := xCopy.Sqrt()
+		r.s = s
+		return divide(ctx.NewFromInt64(1), r, pr, rm, false, 0)
+	}
+
+	r := powPositive(ctx, xCopy, y, pr, rm)
+	if r == nil {
+		// Parsing finite Decimal values into big.Float cannot normally fail;
+		// retain a float64 fallback only as a defensive last resort.
+		result := math.Pow(x.ToNumber(), yn)
+		r, _ = ctx.NewFromFloat64(result)
+		if r == nil {
+			return r
+		}
 		r = finalise(r, pr, rm)
 	}
+	r.s = s
 	return r
 }
 
@@ -685,25 +716,61 @@ func (x *Decimal) Sqrt() *Decimal {
 		r, _ = ctx.New(formatFloatSimple(sFloat))
 	}
 
-	sd := ctx.Precision + 3
+	precision := ctx.Precision
+	sd := precision + 3
+	more := false
+	repeating := false
+	half := &Decimal{d: []int32{5000000}, e: -1, s: 1, ctx: ctx}
 
-	// Newton-Raphson iteration.
-	for iter := 0; iter < 100; iter++ {
-		t := r.copy()
-		r = divide(x, t, sd+2, RoundDown, false, 0).Plus(t).Times(
-			&Decimal{d: []int32{5000000}, e: -1, s: 1, ctx: ctx}, // 0.5
-		)
+	// Newton-Raphson iteration. Match decimal.js's guard-digit checks: simply
+	// stopping when the first precision+3 digits agree loses directed-rounding
+	// information for values just above a perfect square.
+	for {
+		t := r
+		r = t.Plus(divide(x, t, sd+2, RoundDown, false, 0)).Times(half)
 
-		tStr := digitsToStringExact(t.d)[:minInt(sd, len(digitsToStringExact(t.d)))]
-		rStr := digitsToStringExact(r.d)[:minInt(sd, len(digitsToStringExact(r.d)))]
-
-		if tStr == rStr {
-			break
+		tDigits := digitsToStringExact(t.d)
+		rDigits := digitsToStringExact(r.d)
+		if tDigits[:minInt(sd, len(tDigits))] != rDigits[:minInt(sd, len(rDigits))] {
+			continue
 		}
+
+		roundingDigits := rDigits
+		if sd-3 < len(roundingDigits) {
+			end := minInt(sd+1, len(roundingDigits))
+			roundingDigits = roundingDigits[sd-3 : end]
+		} else {
+			roundingDigits = ""
+		}
+
+		// The fourth rounding digit can be one too small at a rounding boundary.
+		if roundingDigits == "9999" || (!repeating && roundingDigits == "4999") {
+			if !repeating {
+				finalise(t, precision+1, RoundUp)
+				if t.Times(t).Eq(x) {
+					r = t
+					break
+				}
+			}
+			sd += 4
+			repeating = true
+			continue
+		}
+
+		// When the guard digits are zero (or exactly 5000), determine whether
+		// an omitted non-zero tail exists before applying the caller's rounding.
+		allZero := roundingDigits == "" || strings.Trim(roundingDigits, "0") == ""
+		isHalfWithZeros := len(roundingDigits) > 0 && roundingDigits[0] == '5' &&
+			strings.Trim(roundingDigits[1:], "0") == ""
+		if allZero || isHalfWithZeros {
+			finalise(r, precision+1, RoundDown)
+			more = !r.Times(r).Eq(x)
+		}
+		break
 	}
 
 	external = true
-	return finalise(r, ctx.Precision, ctx.Rounding)
+	return finalise(r, precision, ctx.Rounding, more)
 }
 
 // Cbrt returns a new Decimal whose value is the cube root of x.
@@ -792,7 +859,7 @@ func formatFloat(f float64, e int) string {
 			return s[:i+1] + itoa(e)
 		}
 	}
-	return s
+	return s + "e" + itoa(e)
 }
 
 // formatFloatSimple formats a float64 to a clean decimal string.

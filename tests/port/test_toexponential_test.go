@@ -195,7 +195,16 @@ func TestOriginal_ToExponential(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(strconv.Itoa(i)+"_"+tt.input, func(t *testing.T) {
-			d, err := ctx.New(tt.input)
+			caseCtx := *ctx
+			switch {
+			case i >= 158:
+				caseCtx.Rounding = decimal.RoundCeil
+			case i >= 110:
+				caseCtx.Rounding = decimal.RoundDown
+			case i >= 65:
+				caseCtx.Rounding = decimal.RoundUp
+			}
+			d, err := caseCtx.New(tt.input)
 			if err != nil {
 				t.Fatalf("New(%q) error: %v", tt.input, err)
 			}

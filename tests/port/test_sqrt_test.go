@@ -1,6 +1,7 @@
 package port_test
 
 import (
+	"math/rand"
 	"strconv"
 	"testing"
 
@@ -35,7 +36,9 @@ func TestOriginal_Sqrt(t *testing.T) {
 		{"-1", 20, decimal.RoundHalfUp, "NaN"},
 		{"-35.999", 20, decimal.RoundHalfUp, "NaN"},
 		{"-0.00000000000001", 20, decimal.RoundHalfUp, "NaN"},
-		{"j.toString()", 20, decimal.RoundHalfUp, "Math.sqrt(j).toString()"},
+		{"101", 2, decimal.RoundUp, "11"},
+		{"111", 2, decimal.RoundUp, "11"},
+		{"999000.25", 3, decimal.RoundUp, "1000"},
 		{"101", 2, decimal.RoundDown, "10"},
 		{"111", 2, decimal.RoundDown, "10"},
 		{"999000.25", 3, decimal.RoundDown, "999"},
@@ -276,9 +279,31 @@ func TestOriginal_Sqrt(t *testing.T) {
 		{"2.79799125754792741188580781151558042045245397938161747962330378605256347960E+8169770428", 78, decimal.RoundFloor, "1.67271971876579712062058760927597244127329496726295947385574838534557761275087e+4084885214"},
 	}
 
+	// The original suite checks 500 random squared integers. Use a fixed seed
+	// here so the Go port remains repeatable while retaining the same property.
+	rng := rand.New(rand.NewSource(1))
+	for i := 0; i < 500; i++ {
+		width := rng.Intn(26) + 1
+		root := rng.Int63n(int64(1) << width)
+		input := strconv.FormatInt(root*root, 10)
+		d, err := ctx.New(input)
+		if err != nil {
+			t.Fatalf("New(%q) error: %v", input, err)
+		}
+		if got, want := d.Sqrt().ValueOf(), strconv.FormatInt(root, 10); got != want {
+			t.Errorf("random square root %d: got %q, want %q", i, got, want)
+		}
+	}
+
 	for i, tt := range tests {
 		t.Run(strconv.Itoa(i)+"_"+tt.input, func(t *testing.T) {
 			customCtx := *ctx
+			// decimal.js sets both thresholds to zero before this source-test
+			// section, forcing exponential notation for every non-zero result.
+			if i >= 61 {
+				customCtx.ToExpPos = 0
+				customCtx.ToExpNeg = 0
+			}
 			customCtx.Precision = tt.sd
 			customCtx.Rounding = tt.rm
 

@@ -110,6 +110,13 @@ func divide(x, y *Decimal, pr int, rm RoundingMode, dp bool, base int) *Decimal 
 		return q
 	}
 
+	// Decimal division can be performed exactly on the finite significands
+	// while retaining the base-10 exponent separately. Keep the base-conversion
+	// path below, where logBase == 1, unchanged.
+	if logBase != 1 {
+		return divideFiniteExact(x, y, sign, sd, rm, dp, pr)
+	}
+
 	// Convert precision in number of base 10 digits to base 1e7 digits.
 	sd = sd/logBase + 2
 	i = 0

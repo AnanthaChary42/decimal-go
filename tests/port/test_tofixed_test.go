@@ -28,8 +28,8 @@ func TestOriginal_ToFixed(t *testing.T) {
 		{"0.09906", 2, "0.10"},
 		{"0.0098034", 3, "0.010"},
 		{"NaN", 2, "NaN"},
-		{"1/0", 2, "Infinity"},
-		{"-1/0", 2, "-Infinity"},
+		{"Infinity", 2, "Infinity"},
+		{"-Infinity", 2, "-Infinity"},
 		{"1111111111111111111111", 8, "1111111111111111111111.00000000"},
 		{"0.1", 1, "0.1"},
 		{"0.1", 2, "0.10"},
@@ -181,7 +181,14 @@ func TestOriginal_ToFixed(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(strconv.Itoa(i)+"_"+tt.input, func(t *testing.T) {
-			d, err := ctx.New(tt.input)
+			caseCtx := *ctx
+			switch {
+			case i >= 118:
+				caseCtx.Rounding = decimal.RoundDown
+			case i >= 77:
+				caseCtx.Rounding = decimal.RoundUp
+			}
+			d, err := caseCtx.New(tt.input)
 			if err != nil {
 				t.Fatalf("New(%q) error: %v", tt.input, err)
 			}

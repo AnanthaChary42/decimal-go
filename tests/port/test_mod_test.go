@@ -15,6 +15,7 @@ func TestOriginal_Mod(t *testing.T) {
 		ToExpPos:  21,
 		MinE:      -9000000000000000,
 		MaxE:      9000000000000000,
+		Modulo:    decimal.RoundDown,
 	}
 
 	tests := []struct {

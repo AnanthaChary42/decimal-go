@@ -528,10 +528,26 @@ func TestOriginal_Div(t *testing.T) {
 		{"-5.3001546173537375421251306682432058841675552963350451100e+458406", "2.543e-80", "-2.084213376859511420418848080315849738170489695766828592213920566260322453794730633110499e+458486"},
 	}
 
+	configuredStart := len(tests) - len(originalDivCaseContexts)
+	if configuredStart < 0 {
+		t.Fatalf("division test data has %d cases but %d configured contexts", len(tests), len(originalDivCaseContexts))
+	}
+
 	for i, tt := range tests {
 		t.Run(strconv.Itoa(i)+"_"+tt.dividend+"/"+tt.divisor, func(t *testing.T) {
-			a, errA := ctx.New(tt.dividend)
-			b, errB := ctx.New(tt.divisor)
+			caseCtx := *ctx
+			if i >= configuredStart {
+				settings := originalDivCaseContexts[i-configuredStart]
+				caseCtx.Precision = settings.precision
+				caseCtx.Rounding = decimal.RoundingMode(settings.rounding)
+				if settings.expZero {
+					caseCtx.ToExpNeg = 0
+					caseCtx.ToExpPos = 0
+				}
+			}
+
+			a, errA := caseCtx.New(tt.dividend)
+			b, errB := caseCtx.New(tt.divisor)
 			if errA != nil || errB != nil {
 				t.Fatalf("New error for (%q, %q)", tt.dividend, tt.divisor)
 			}

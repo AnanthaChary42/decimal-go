@@ -23,15 +23,17 @@ func TestOriginal_ToDP(t *testing.T) {
 		rm       int
 		expected string
 	}{
-		{"0", 0, -1, "0"},
-		{"-1", 0, -1, "-1"},
-		{"9.999e+9000000000000000", 0, -1, "9.999e+9000000000000000"},
-		{"-9.999e+9000000000000000", 0, -1, "-9.999e+9000000000000000"},
-		{"1e-9000000000000000", 0, -1, "1e-9000000000000000"},
-		{"-1e-9000000000000000", 0, -1, "-1e-9000000000000000"},
-		{"Infinity", 0, -1, "Infinity"},
-		{"-Infinity", 0, -1, "-Infinity"},
-		{"NaN", 0, -1, "NaN"},
+		// JS lines 24-32: no dp argument → use dp=-1 sentinel for "no dp"
+		{"0", -1, -1, "0"},
+		{"-1", -1, -1, "-1"},
+		{"9.999e+9000000000000000", -1, -1, "9.999e+9000000000000000"},
+		{"-9.999e+9000000000000000", -1, -1, "-9.999e+9000000000000000"},
+		{"1e-9000000000000000", -1, -1, "1e-9000000000000000"},
+		{"-1e-9000000000000000", -1, -1, "-1e-9000000000000000"},
+		{"Infinity", -1, -1, "Infinity"},
+		{"-Infinity", -1, -1, "-Infinity"},
+		{"NaN", -1, -1, "NaN"},
+		// JS lines 33-34: dp=0 explicitly
 		{"Infinity", 0, -1, "Infinity"},
 		{"-Infinity", 0, -1, "-Infinity"},
 		{"0.5", 0, -1, "1"},
@@ -262,7 +264,10 @@ func TestOriginal_ToDP(t *testing.T) {
 				t.Fatalf("New(%q) error: %v", tt.input, err)
 			}
 			var got string
-			if tt.rm >= 0 {
+			if tt.dp < 0 {
+				// No dp argument: JS toDP() with no args just finalises with context defaults
+				got = d.ValueOf()
+			} else if tt.rm >= 0 {
 				got = d.ToDP(tt.dp, decimal.RoundingMode(tt.rm)).ValueOf()
 			} else {
 				got = d.ToDP(tt.dp).ValueOf()

@@ -217,7 +217,17 @@ func TestOriginal_ToPrecision(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(strconv.Itoa(i)+"_"+tt.input, func(t *testing.T) {
-			d, err := ctx.New(tt.input)
+			caseCtx := *ctx
+			// The JavaScript helper accepts a per-call rounding argument. The
+			// selected Go rows include those overrides, so these are the effective
+			// modes after applying both the global transitions and call arguments.
+			switch {
+			case i >= 141:
+				caseCtx.Rounding = decimal.RoundDown
+			case i >= 81:
+				caseCtx.Rounding = decimal.RoundUp
+			}
+			d, err := caseCtx.New(tt.input)
 			if err != nil {
 				t.Fatalf("New(%q) error: %v", tt.input, err)
 			}

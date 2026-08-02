@@ -31,7 +31,15 @@ func TestOriginal_IntPow(t *testing.T) {
 		case string:
 			expStr = v
 		case float64:
-			if math.IsNaN(v) { expStr = "NaN" } else if math.IsInf(v, 1) { expStr = "Infinity" } else if math.IsInf(v, -1) { expStr = "-Infinity" } else { expStr = newDec(t, v).ValueOf() }
+			if math.IsNaN(v) {
+				expStr = "NaN"
+			} else if math.IsInf(v, 1) {
+				expStr = "Infinity"
+			} else if math.IsInf(v, -1) {
+				expStr = "-Infinity"
+			} else {
+				expStr = newDec(t, v).ValueOf()
+			}
 		case int:
 			expStr = newDec(t, v).ValueOf()
 		}
@@ -91,7 +99,8 @@ func TestOriginal_IntPow(t *testing.T) {
 		tPow("Infinity", 0.999, math.Inf(-1))
 		tPow("Infinity", -0.999, math.Inf(-1))
 		tPow("Infinity", math.Inf(1), 2)
-		tPow("Infinity", math.Inf(1), -2)
+		// Original JavaScript case is (1 / Infinity)^-2, i.e. (+0)^-2.
+		tPow("Infinity", float64(0), -2)
 		tPow("-Infinity", math.Inf(-1), 3)
 		tPow("-Infinity", math.Inf(-1), 13)
 	})

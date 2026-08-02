@@ -10,7 +10,7 @@ import (
 func TestOriginal_ToSD(t *testing.T) {
 	ctx := &decimal.Context{
 		Precision: 20,
-		Rounding:  decimal.RoundHalfEven,
+		Rounding:  decimal.RoundHalfCeil,
 		ToExpNeg:  -9000000000000000,
 		ToExpPos:  9000000000000000,
 		MinE:      -9000000000000000,
@@ -247,7 +247,15 @@ func TestOriginal_ToSD(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(strconv.Itoa(i)+"_"+tt.input, func(t *testing.T) {
-			d, err := ctx.New(tt.input)
+			caseCtx := *ctx
+			// Lines 43-70 of the original module mutate the global JS
+			// configuration between otherwise argument-less toSD calls.
+			if i >= 16 && i <= 24 {
+				caseCtx.Precision = 5
+				caseCtx.Rounding = decimal.RoundingMode(i - 16)
+			}
+
+			d, err := caseCtx.New(tt.input)
 			if err != nil {
 				t.Fatalf("New(%q) error: %v", tt.input, err)
 			}

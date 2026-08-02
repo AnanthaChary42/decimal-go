@@ -1,8 +1,9 @@
 package decimal
 
 import (
+	"errors"
 	"math"
-	"strings"
+	"strconv"
 )
 
 // finiteToString converts a finite Decimal to a string.
@@ -212,99 +213,26 @@ func (x *Decimal) ToPrecision(sd int, rm ...RoundingMode) string {
 // ToNumber returns the float64 representation of x.
 func (x *Decimal) ToNumber() float64 {
 	if x.IsNaN() {
-		return 0 // Go doesn't have NaN as easily usable
+		return math.NaN()
 	}
-	s := x.String()
-	f := 0.0
-	// Simple conversion via string.
-	// Use strings to number conversion.
-	_, _ = parseFloat(s, &f)
+	if !x.IsFinite() {
+		if x.IsNeg() {
+			return math.Inf(-1)
+		}
+		return math.Inf(1)
+	}
+	if x.IsZero() {
+		if x.IsNeg() {
+			return math.Copysign(0, -1)
+		}
+		return 0
+	}
+
+	s := x.ValueOf()
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0
+	}
 	return f
 }
 
-// parseFloat is a simple string to float64 converter.
-func parseFloat(s string, f *float64) (bool, error) {
-	s = strings.TrimSpace(s)
-	val := 0.0
-	neg := false
-	i := 0
-
-	if i < len(s) && s[i] == '-' {
-		neg = true
-		i++
-	} else if i < len(s) && s[i] == '+' {
-		i++
-	}
-
-	if s == "Infinity" || s == "+Infinity" {
-		*f = posInf()
-		return true, nil
-	}
-	if s == "-Infinity" {
-		*f = negInf()
-		return true, nil
-	}
-
-	// Integer part.
-	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
-		val = val*10 + float64(s[i]-'0')
-		i++
-	}
-
-	// Fraction part.
-	if i < len(s) && s[i] == '.' {
-		i++
-		frac := 0.1
-		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
-			val += float64(s[i]-'0') * frac
-			frac /= 10
-			i++
-		}
-	}
-
-	// Exponent part.
-	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
-		i++
-		expNeg := false
-		if i < len(s) && s[i] == '-' {
-			expNeg = true
-			i++
-		} else if i < len(s) && s[i] == '+' {
-			i++
-		}
-		exp := 0
-		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
-			exp = exp*10 + int(s[i]-'0')
-			i++
-		}
-		if expNeg {
-			exp = -exp
-		}
-		p := 1.0
-		if exp >= 0 {
-			for j := 0; j < exp; j++ {
-				p *= 10
-			}
-			val *= p
-		} else {
-			for j := 0; j < -exp; j++ {
-				p *= 10
-			}
-			val /= p
-		}
-	}
-
-	if neg {
-		val = -val
-	}
-	*f = val
-	return true, nil
-}
-
-func posInf() float64 {
-	return math.Inf(1)
-}
-
-func negInf() float64 {
-	return math.Inf(-1)
-}

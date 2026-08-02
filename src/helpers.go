@@ -219,8 +219,8 @@ func finalise(x *Decimal, sd int, rm RoundingMode, isTruncated ...bool) *Decimal
 
 	ctx := x.getContext()
 
-	// Don't round if sd is negative (used as sentinel for "no rounding").
-	if sd < 0 {
+	// Don't round if sd is sentinel for "no rounding".
+	if sd == -999999 {
 		// Just check overflow/underflow.
 		if external {
 			if x.e > ctx.MaxE {
@@ -376,17 +376,9 @@ func finalise(x *Decimal, sd int, rm RoundingMode, isTruncated ...bool) *Decimal
 	if sd < 1 || len(xd) == 0 || xd[0] == 0 {
 		x.d = x.d[:0]
 		if roundUp {
-			// Convert sd to decimal places.
-			sdAdj := sd - x.e - 1
-			x.d = append(x.d[:0], int32(mathpow(10, (LOG_BASE-sdAdj%LOG_BASE)%LOG_BASE)))
-			// JS: x.e = -sd || 0  (i.e. if -sd is 0, use 0; otherwise use -sd)
-			if sdAdj > 0 {
-				x.e = -sdAdj
-			} else {
-				x.e = 0
-			}
+			x.d = append(x.d[:0], 1)
+			x.e = x.e + 1 - sd
 		} else {
-			// Zero.
 			x.d = append(x.d[:0], 0)
 			x.e = 0
 		}

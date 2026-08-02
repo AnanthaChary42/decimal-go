@@ -8,7 +8,7 @@ import (
 
 // Regex patterns for parsing, matching decimal.js patterns.
 var (
-	reDecimal = regexp.MustCompile(`^(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$`)
+	reDecimal = regexp.MustCompile(`(?i)^(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$`)
 	reBinary  = regexp.MustCompile(`(?i)^0b([01]+(\.[01]*)?|\.[01]+)(p[+-]?\d+)?$`)
 	reHex     = regexp.MustCompile(`(?i)^0x([0-9a-f]+(\.[0-9a-f]*)?|\.[0-9a-f]+)(p[+-]?\d+)?$`)
 	reOctal   = regexp.MustCompile(`(?i)^0o([0-7]+(\.[0-7]*)?|\.[0-7]+)(p[+-]?\d+)?$`)

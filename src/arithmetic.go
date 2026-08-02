@@ -1,6 +1,7 @@
 package decimal
 
 import (
+	"errors"
 	"math"
 	"strconv"
 )
@@ -8,17 +9,16 @@ import (
 // Abs returns a new Decimal whose value is the absolute value of x.
 func (x *Decimal) Abs() *Decimal {
 	r := x.copy()
-	if r.s < 0 {
+	if r.IsNeg() {
 		r.s = 1
 	}
-	return finalise(r, -1, 0)
+	return finalise(r, -999999, 0)
 }
 
-// Neg returns a new Decimal whose value is x negated.
 func (x *Decimal) Neg() *Decimal {
 	r := x.copy()
 	r.s = -r.s
-	return finalise(r, -1, 0)
+	return finalise(r, -999999, 0)
 }
 
 // Plus returns a new Decimal whose value is x + y.
@@ -632,6 +632,7 @@ func (x *Decimal) Pow(y *Decimal) *Decimal {
 	r, _ := ctx.NewFromFloat64(result)
 	if r != nil {
 		r.s = s
+		r = finalise(r, pr, rm)
 	}
 	return r
 }
@@ -775,8 +776,10 @@ func intPow(ctx *Context, x *Decimal, n int, pr int) *Decimal {
 
 // Helper: parse float from string.
 func parseFloatStr(s string) float64 {
-	v := 0.0
-	parseFloat(s, &v)
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0
+	}
 	return v
 }
 

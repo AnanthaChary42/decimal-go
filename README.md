@@ -113,7 +113,8 @@ The differential fuzzer runs the Go port and the original `decimal.js` library s
 
 ```bash
 # Requires: Node.js/npm and the one-time setup: cd fuzz && npm install
-go test ./fuzz/... -run TestDifferentialFuzz -timeout 120s -v
+make diff-fuzz
+# Direct Go command: go test ./fuzz/... -run TestDifferentialFuzz -timeout 120s -v
 # Override duration: FUZZ_DURATION=90s go test ./fuzz/... -run TestDifferentialFuzz -timeout 120s -v
 ```
 

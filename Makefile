@@ -35,8 +35,12 @@ bench:
 	node bench/scripts/collect.js --js-repo "$(JS_REPO)" --go-bin $(GO_BENCH_BIN) --ops $(BENCH_OPS) --output bench/results.json --suite-verification bench/.tmp/suite_verification.json
 
 fuzz:
-	@echo "==> Running differential fuzzing harness (60s)..."
+	@echo "==> Running fuzzing harness (60s)..."
 	go test ./fuzz/... -fuzz=FuzzDecimal -fuzztime=60s
+
+diff-fuzz:
+	@echo "==> Running differential fuzzing harness (60s)..."
+	go test ./fuzz/... -run TestDifferentialFuzz -timeout 120s -v
 
 docker-build:
 	@echo "==> Building Docker image decimal-go-port..."

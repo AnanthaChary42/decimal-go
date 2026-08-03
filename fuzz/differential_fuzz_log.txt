@@ -11,22 +11,22 @@ Seed:     42
   toFixed(10), sqrt, floor, ceil, trunc, round, mod
 
 --- Fuzz progress ---
-fuzz: elapsed: 5s, ops: 37562 (7512/sec), divergences: 0
-fuzz: elapsed: 10s, ops: 79504 (7950/sec), divergences: 0
-fuzz: elapsed: 15s, ops: 105435 (7028/sec), divergences: 0
-fuzz: elapsed: 20s, ops: 117006 (5850/sec), divergences: 0
-fuzz: elapsed: 25s, ops: 155590 (6223/sec), divergences: 0
-fuzz: elapsed: 30s, ops: 197360 (6578/sec), divergences: 0
-fuzz: elapsed: 35s, ops: 239086 (6831/sec), divergences: 0
-fuzz: elapsed: 40s, ops: 277242 (6931/sec), divergences: 0
-fuzz: elapsed: 45s, ops: 313893 (6975/sec), divergences: 0
-fuzz: elapsed: 50s, ops: 351351 (7027/sec), divergences: 0
-fuzz: elapsed: 55s, ops: 388555 (7064/sec), divergences: 0
+fuzz: elapsed: 5s, ops: 55732 (11146/sec), divergences: 0
+fuzz: elapsed: 10s, ops: 113860 (11385/sec), divergences: 0
+fuzz: elapsed: 15s, ops: 172236 (11482/sec), divergences: 0
+fuzz: elapsed: 20s, ops: 230760 (11537/sec), divergences: 0
+fuzz: elapsed: 25s, ops: 288990 (11559/sec), divergences: 0
+fuzz: elapsed: 30s, ops: 347183 (11572/sec), divergences: 0
+fuzz: elapsed: 35s, ops: 404413 (11554/sec), divergences: 0
+fuzz: elapsed: 40s, ops: 462329 (11557/sec), divergences: 0
+fuzz: elapsed: 45s, ops: 520836 (11573/sec), divergences: 0
+fuzz: elapsed: 50s, ops: 578831 (11576/sec), divergences: 0
+fuzz: elapsed: 55s, ops: 636327 (11569/sec), divergences: 0
 
 --- Final Summary ---
-Total input pairs tested: 427271
-Total elapsed:            1m0s
-Throughput:               7121 ops/sec
+Total input pairs tested: 693744
+Total elapsed:            1m0.001s
+Throughput:               11562 ops/sec
 Divergences:              0
 
-RESULT: PASS — 0 divergences across 427271 differential comparisons in 1m0s
+RESULT: PASS — 0 divergences across 693744 differential comparisons in 1m0s

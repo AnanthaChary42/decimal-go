@@ -18,22 +18,30 @@ decimal-go-Port/
 ├── .gitignore
 ├── LICENSE                          # MIT, matching original decimal.js license
 ├── README.md                        # migration rationale + build instructions
-├── DECISIONS.md                     # architectural decision records (D001–D011)
+├── DECISIONS.md                     # architectural decision records (D001–D019)
+├── UNSAFE.md                        # zero-unsafe escape-hatch inventory
 ├── Dockerfile                       # single command → runnable artifact
 ├── Makefile                         # make build / make test / make bench / make fuzz
 ├── go.mod
 ├── .port-mortem.toml                # track letter, source repo URL, kickoff hash reference
 ├── src/                             # package decimal implementation
-│   ├── arithmetic.go
-│   ├── comparison.go
-│   ├── constants.go
-│   ├── decimal.go
-│   ├── divide.go
-│   ├── errors.go
-│   ├── format.go
-│   ├── helpers.go
-│   ├── parse.go
-│   └── rounding.go
+│   ├── advanced_transcendental.go   # atan, atan2, sinh, cosh, tanh, asinh, acosh, atanh
+│   ├── arithmetic.go                # add, sub, mul, pow, sqrt, cbrt
+│   ├── base_format.go               # toBinary, toOctal, toHex
+│   ├── comparison.go                # cmp, eq, gt, lt, clamp
+│   ├── compat.go                    # JS-compatible dynamic argument wrappers
+│   ├── config.go                    # context configuration, min/max/sign/sum/random
+│   ├── constants.go                 # BASE, LOG_BASE, LN10, PI constants
+│   ├── decimal.go                   # core Decimal type, Context, constructors
+│   ├── divide.go                    # word-array long division (base conversion)
+│   ├── errors.go                    # DecimalError type
+│   ├── exact.go                     # exact rational division via big.Int
+│   ├── format.go                    # string, toFixed, toExponential, toPrecision
+│   ├── helpers.go                   # digit manipulation, finalise, rounding logic
+│   ├── parse.go                     # decimal/hex/binary/octal string parser
+│   ├── rounding.go                  # floor, ceil, trunc, round, toDP, toSD
+│   ├── transcendental.go            # ln, exp, log, pow via math/big.Float
+│   └── trigonometric.go             # sin, cos, tan, asin, acos
 ├── tests/
 │   ├── original/
 │   │   └── test-suite.sha256        # SHA256 hash of original JS test suite, pinned at kickoff
@@ -41,8 +49,11 @@ decimal-go-Port/
 │       ├── test_original_test.go    # original test assertions ported 1:1
 │       └── decimal_port_test.go     # additional Go-idiomatic tests
 ├── fuzz/
-│   ├── harness.go                   # differential fuzz harness
-│   └── log.txt                      # actual 60s+ run output
+│   ├── differential_test.go         # differential fuzz: Go port vs JS oracle (stdin/stdout pipe)
+│   ├── harness_test.go              # property-based fuzz: parsing symmetry, commutativity
+│   ├── oracle.js                    # Node.js oracle that evaluates decimal.js operations
+│   ├── package.json                 # npm dependency on decimal.js for the oracle
+│   └── differential_fuzz_log.txt    # actual 60s+ differential run output (693k ops, 0 divergences)
 └── bench/
     ├── methodology.md               # measurement methodology & confounders
     └── results.json                 # p99, RSS, startup, throughput — original vs port
@@ -70,10 +81,21 @@ make test
 
 ```bash
 make bench
-# Direct Go command: go test ./src/... -bench=. -benchmem
 ```
 
 ### Run Differential Fuzzer (60s+)
+
+The differential fuzzer runs the Go port and the original `decimal.js` library side-by-side, feeding identical random inputs to both and comparing outputs across 21 operations (toString, valueOf, plus, minus, times, div, abs, neg, cmp, predicates, toFixed, sqrt, floor, ceil, trunc, round, mod). It uses a Node.js child process as the JS oracle.
+
+```bash
+# Requires: cd fuzz && npm install (one-time setup for the JS oracle)
+go test ./fuzz/... -run TestDifferentialFuzz -timeout 120s -v
+# Override duration: FUZZ_DURATION=90s go test ./fuzz/... -run TestDifferentialFuzz -timeout 120s -v
+```
+
+The latest run completed **693,744 input pairs** in 60s with **0 divergences** (see `fuzz/differential_fuzz_log.txt`).
+
+### Run Property-Based Fuzzer (Go native)
 
 ```bash
 make fuzz
@@ -85,3 +107,4 @@ make fuzz
 ```bash
 docker build -t decimal-go-port .
 ```
+

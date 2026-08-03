@@ -28,7 +28,7 @@ modules are 100% statically typed.
 | `//go:nosplit` | **0** | 0 | ✅ |
 | `//go:nowritebarrier` | **0** | 0 | ✅ |
 | `interface{}` (pre-1.18 syntax) | **1** | — | See §1 |
-| `any` (type-erased parameters) | **40** | — | See §2 |
+| `any` (type-erased parameters) | **50** | — | See §2 |
 | Type switches (`.(type)`) | **3** | — | See §3 |
 | `panic()` calls | **30** | — | See §4 |
 
@@ -44,7 +44,7 @@ modules are 100% statically typed.
 
 ---
 
-## §2. `any` Parameters — 40 occurrences across 4 files
+## §2. `any` Parameters — 50 occurrences across 5 files
 
 All `any` usage is concentrated in **compatibility overload wrappers** that replicate JavaScript's dynamic `Decimal(value)` constructor pattern. The core library is fully typed.
 
@@ -52,11 +52,12 @@ All `any` usage is concentrated in **compatibility overload wrappers** that repl
 
 | File | `any` count | Purpose |
 |------|-------------|---------|
-| `compat.go` | 13 | `decimalArgument()`, `mustDecimalArgument()`, `roundingArgument()`, `Hypot()`, `ToNearest()`, `ToFraction()` |
-| `base_format.go` | 8 | `ToBinary()`, `ToOctal()`, `ToHex()`, `ToHexadecimal()`, `toBaseString()`, `positiveIntArgument()` |
-| `transcendental.go` | 9 | `Ln()`, `Exp()`, `Log()`, `Log2()`, `Log10()` static + context wrappers |
-| `advanced_transcendental.go` | 10 | `Atan()`, `Atan2()`, `Sinh()`, `Cosh()`, `Tanh()`, `Asinh()`, `Acosh()`, `Atanh()` static + context wrappers |
-| **Total** | **40** | |
+| `compat.go` | 7 | `decimalArgument()`, `mustDecimalArgument()`, `roundingArgument()`, `Hypot()`, `ToNearest()`, `ToFraction()` |
+| `base_format.go` | 6 | `ToBinary()`, `ToOctal()`, `ToHex()`, `ToHexadecimal()`, `toBaseString()`, `positiveIntArgument()` |
+| `transcendental.go` | 12 | `Ln()`, `Exp()`, `Log()`, `Log2()`, `Log10()` static + context wrappers, `Logarithm()` |
+| `advanced_transcendental.go` | 15 | `Atan()`, `Atan2()`, `Sinh()`, `Cosh()`, `Tanh()`, `Asinh()`, `Acosh()`, `Atanh()` static + context wrappers |
+| `trigonometric.go` | 10 | `Sin()`, `Cos()`, `Tan()`, `Asin()`, `Acos()` static + context wrappers |
+| **Total** | **50** | |
 
 ### Why `any` is used
 
@@ -111,19 +112,19 @@ These mirror JavaScript's `throw Error(...)` for invalid arguments. In `decimal.
 
 ## §5. Files with ZERO escape hatches
 
-The following files (3,488 of 4,993 lines = **70%** of the codebase) contain no `any`, no `interface{}`, no type switches, and no panics:
+The following files (3,022 of 4,993 lines = **61%** of the codebase) contain no `any`, no `interface{}`, no type switches, and no panics:
 
 | File | Lines | Description |
 |------|------:|-------------|
 | `arithmetic.go` | 869 | Addition, subtraction, multiplication, power |
 | `comparison.go` | 159 | Cmp, Eq, Gt, Lt, Clamp |
-| `constants.go` | 95 | Package constants |
+| `constants.go` | 38 | Package constants |
 | `decimal.go` | 362 | Core Decimal type, Context, constructors |
 | `divide.go` | 449 | Long division algorithm |
 | `format.go` | 235 | String, ToFixed, ToExponential, ToPrecision |
-| `helpers.go` | 434 | Internal digit manipulation, finalise |
-| `parse.go` | 245 | Decimal string parser |
-| `rounding.go` | 38 | Floor, Ceil, Trunc, Round |
+| `helpers.go` | 489 | Internal digit manipulation, finalise |
+| `parse.go` | 266 | Decimal string parser |
+| `rounding.go` | 54 | Floor, Ceil, Trunc, Round |
 
 ---
 
@@ -146,6 +147,6 @@ For a Go ↔ JavaScript port of a dynamically-typed library:
 | `unsafe` | 0 | 0–5 | 🟢 Excellent |
 | `reflect` | 0 | 0–10 | 🟢 Excellent |
 | CGo | 0 | 0 | 🟢 Excellent |
-| `any` params | 40 (compat layer only) | 20–100 | 🟢 Good (confined) |
+| `any` params | 50 (compat layer only) | 20–100 | 🟢 Good (confined) |
 | Core `any` | **0** | — | 🟢 Perfect |
 | `panic` | 30 (matching JS `throw`) | 10–50 | 🟢 Normal |

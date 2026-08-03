@@ -1,24 +1,51 @@
 {
-  "benchmark_name": "decimal.js vs decimal-go (1,000,000 ops)",
-  "workload": "mixed arithmetic (add, sub, mul, div, format, round)",
+  "benchmark_name": "decimal.js vs decimal-go (100,000 mixed operations)",
+  "workload": "add, sub, mul, div, fixed formatting, decimal-place rounding, whole-number rounding",
+  "measured_at": "2026-08-03T08:01:45.753Z",
   "original_js": {
-    "runtime": "Node.js v20.11.0",
-    "p99_latency_ns": 480,
-    "rss_kb": 35020,
-    "startup_ms": 35.0,
-    "throughput_ops_sec": 210000
+    "runtime": "Node.js v24.14.1",
+    "p99_latency_ns": 18000,
+    "rss_kb": 47036,
+    "throughput_ops_sec": 131972.90385127286,
+    "operations": 100000,
+    "startup_ms": 74.7669
   },
   "port_go": {
-    "runtime": "Go 1.22 native binary",
-    "p99_latency_ns": 120,
-    "rss_kb": 4608,
-    "startup_ms": 1.2,
-    "throughput_ops_sec": 850000
+    "runtime": "Go go1.26.5",
+    "p99_latency_ns": 30400,
+    "rss_kb": 13112,
+    "throughput_ops_sec": 104106.81609187384,
+    "operations": 100000,
+    "startup_ms": 19.1708
+  },
+  "suite_verification": {
+    "status": "passed",
+    "original_js": {
+      "status": "passed",
+      "module_files": 61,
+      "canonical_runner_modules": 60,
+      "standalone_modules": [
+        "powSqrt.js"
+      ],
+      "assertions": 32658,
+      "canonical_runner_assertions": 22658,
+      "standalone_assertions": 10000,
+      "runner": "test/test.js + test/modules/powSqrt.js",
+      "reference_library": "decimal.js 10.6.0",
+      "reference_repository": "C:\\Users\\Lenovo\\projects\\port_mortem\\decimal.js"
+    },
+    "port_go": {
+      "status": "passed",
+      "command": "go test -count=1 ./tests/port",
+      "top_level_test_functions": 70,
+      "scope": "All current Go port-package tests were executed.",
+      "parity_note": "This records execution of the current Go port tests; it does not claim a one-to-one translation of every original JavaScript assertion."
+    }
   },
   "improvements": {
-    "latency_speedup": "4.0x",
-    "throughput_increase": "4.05x",
-    "memory_reduction_pct": "86.8%",
-    "startup_speedup": "29.1x"
+    "latency_speedup": "0.59x",
+    "throughput_increase": "0.79x",
+    "memory_reduction_pct": "72.1%",
+    "startup_speedup": "3.90x"
   }
 }

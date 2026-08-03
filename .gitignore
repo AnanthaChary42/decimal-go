@@ -37,8 +37,10 @@ fuzz/cache/
 fuzz/node_modules/
 fuzz/package-lock.json
 
-# Benchmark output (keep results.json, ignore raw data)
-bench/*.txt
+# Benchmark output (keep results.json and methodology, ignore generated data)
+bench/.tmp/
+bench/bin/
+bench/node_modules/
 !bench/methodology.md
 !bench/results.json
 

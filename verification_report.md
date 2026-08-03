@@ -2,20 +2,22 @@
 
 ## Executive Summary
 
-> [!NOTE]
-> **Major Update (Current Session):** Implemented all 24 previously missing modules from the JS `decimal.js` suite:
-> `hypot.js`, `toNearest.js`, `toFraction.js`, `toBinary.js`, `toOctal.js`, `toHex.js`, `ln.js`, `log.js`, `log2.js`, `log10.js`, and `exp.js`.
-> The current continuation adds `sin.js`, `cos.js`, `tan.js`, `asin.js`, `acos.js`, `atan.js`, `atan2.js`, `sinh.js`, `cosh.js`, `tanh.js`, `asinh.js`, `acosh.js`, and `atanh.js`.
+> [!IMPORTANT]
+> **Current factual status (2026-08-03):** The original `test/modules` directory contains **61 JavaScript module files**. The canonical `test/test.js` runner executes 60 of them; `powSqrt.js` is a separate standalone suite. The Go port currently contains **70 top-level `TestOriginal_` functions** in `tests/port`.
 >
-> **Library additions:** Added compatibility APIs in `src/compat.go` and `src/base_format.go`, high-precision logarithm/exponential implementations in `src/transcendental.go`, and regression coverage in `tests/port/test_missing_modules_test.go` and `tests/port/test_ln_log_exp_test.go`.
+> The source tree demonstrates that every JavaScript module area has a Go implementation and some Go test coverage. It does **not** demonstrate one-to-one translation of every original JavaScript assertion: the table itself identifies several core subsets and representative regression suites. Therefore, “61 modules ported” means implementation/test presence, not proven full assertion parity.
 >
-> **Verification update (2026-08-03):** `go test -count=1 ./tests/port` completed successfully after adding the final `atanh` module. All 61 Go modules pass.
+> The benchmark launcher now runs all 61 original JavaScript suites and all current Go port tests before measuring performance. Its generated `bench/results.json` records this preflight under `suite_verification`. This report was updated by static inspection; no test or benchmark was executed during this update.
+> JavaScript verification and timing both use the supplied original repository at `C:\Users\Lenovo\projects\port_mortem\decimal.js`, never a substituted npm package.
 
 ---
 
 ## 1. Module-Level Coverage
 
-### 61 JS Test Modules → 61 Ported (61 complete, 0 in-progress, 0 missing)
+### Source Module Coverage — 61 JavaScript module files (60 canonical runner + standalone `powSqrt`)
+
+> [!WARNING]
+> The following entries are a mapping of source modules to current Go implementation/test coverage. Their coverage/status labels are historical estimates, **not** a completed assertion-by-assertion parity audit.
 
 | # | JS Module | JS Lines | JS Test Cases (approx) | Go File | Go Test Cases | Coverage | Status |
 |---|-----------|----------|------------------------|---------|---------------|----------|--------|
@@ -174,18 +176,16 @@
 
 | Category | Count | Status |
 |----------|-------|--------|
-| ✅ Fully ported modules (100% coverage) | 27 | **Complete** (prior sessions) |
-| ✅ Newly implemented modules (this session) | 24 | **Complete implementation** (`hypot`, `toNearest`, `toFraction`, `toBinary`, `toOctal`, `toHex`, `ln`, `log`, `log2`, `log10`, `exp`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`) |
-| ❌ Remaining missing modules (0%) | 0 | **None** |
-| **Total JS test modules ported** | **61** | **Up from 37** |
-| **Total Go test cases (actual)** | **~10,500+** | **Increased with the earlier regressions plus trig and advanced-transcendental cases** |
-| **Coverage of attempted modules** | | **Verification completed for all 24 newly implemented modules** |
+| JavaScript module files in the source tree | 61 | 60 loaded by `test/test.js`, plus standalone `powSqrt.js` |
+| Go module/API mappings recorded | 61 | Implementation and at least some Go test coverage are present |
+| Current top-level Go `TestOriginal_` functions | 70 | Includes split modules and regression-focused tests |
+| Complete original-assertion parity | Not established | Requires a one-to-one test-port audit; do not infer it from module count |
 
 ---
 
 ## 5. Resolution & Verification Status
 
-All **61 ported modules pass** their Go test coverage, including the final `atanh` module.
+The prior user-reported package result showed that the then-current Go port test package passed:
 
 ```powershell
 go test -count=1 ./tests/port
@@ -197,7 +197,15 @@ Result reported by the user:
 ok      github.com/AnanthaChary42/decimal-go/tests/port    1.220s
 ```
 
-The test port reflects the original JavaScript configuration inputs where those inputs affect expected output; original JavaScript assertions were not removed or weakened.
+That result confirms the current Go test package was passing at that time. It does **not** by itself prove that all 61 source JavaScript module files, or every assertion within them, had an equivalent Go assertion.
+
+The updated benchmark gate supplies the missing execution check for subsequent runs:
+
+```powershell
+.\bench\run.ps1
+```
+
+It stops before timing if either the original JavaScript suite (60 aggregate modules plus `powSqrt.js`) or `go test -count=1 ./tests/port` fails. The resulting `bench/results.json` records exact JavaScript assertion totals for that run.
 
 ---
 
@@ -205,6 +213,6 @@ The test port reflects the original JavaScript configuration inputs where those 
 
 > [!NOTE]
 > Future work to achieve complete 61-module parity includes:
-> 1. All 61 original JS modules now have Go implementations.
-> 2. **Expand partial ports:** `toString.js` (remaining 250 test cases), `intPow.js` (remaining ~300 test cases), and `immutability.js` (remaining methods) can be expanded once corresponding library methods exist.
-> 3. **Run `go test -count=1 ./tests/port`** after future changes to maintain validation of all 61 ported modules.
+> 1. Audit every original JavaScript assertion and port it without changing, skipping, or weakening test behavior.
+> 2. Expand the clearly partial ports: `toString.js`, `intPow.js`, and `immutability.js`; also audit the modules currently described only as source vectors or regression cases.
+> 3. Run `.\bench\run.ps1` after future changes so one command verifies all 61 JavaScript source suites, every current Go port test, and then records fresh performance measurements.

@@ -130,6 +130,19 @@ make fuzz
 ### Docker Containerized Build & Test
 
 ```bash
+# Build the Docker image
 docker build -t decimal-go-port .
+
+# Run unit tests via Docker Compose
+docker compose run --rm test
+
+# Run differential fuzzing against Node.js decimal.js oracle via Docker Compose
+docker compose run --rm diff-fuzz
+
+# Alternatively, use Makefile helpers
+make docker-build
+make docker-test
+make docker-diff-fuzz
 ```
+
 

@@ -46,5 +46,14 @@ docker-build:
 	@echo "==> Building Docker image decimal-go-port..."
 	docker build -t decimal-go-port .
 
+docker-test:
+	@echo "==> Running Go test suite inside Docker..."
+	docker run --rm decimal-go-port go test ./tests/port/... -v
+
+docker-diff-fuzz:
+	@echo "==> Running differential fuzzing inside Docker..."
+	docker run --rm decimal-go-port go test ./fuzz/... -run TestDifferentialFuzz -v -timeout 120s
+
+
 clean:
 	go clean

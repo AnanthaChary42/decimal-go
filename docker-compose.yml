@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  # Service to run unit test suite
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: go test ./tests/port/... -v
+
+  # Service to run differential fuzzing with decimal.js oracle
+  diff-fuzz:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: go test ./fuzz/... -run TestDifferentialFuzz -v -timeout 120s
+
+  # Service to run standard Go fuzzing harness
+  fuzz:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: go test ./fuzz/... -fuzz=FuzzDecimal -fuzztime=60s
+
+  # Interactive environment for debugging or running Makefile targets directly
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: /bin/bash
+    stdin_open: true
+    tty: true

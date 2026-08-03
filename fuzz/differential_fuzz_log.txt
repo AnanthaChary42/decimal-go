@@ -1,0 +1,32 @@
+=== Differential Fuzz Report ===
+Source:    github.com/MikeMcl/decimal.js (npm decimal.js)
+Port:     github.com/AnanthaChary42/decimal-go
+Oracle:   Node.js + original decimal.js via stdin/stdout pipe
+Duration: 1m0s
+Seed:     42
+
+--- Operations under test (shared public API) ---
+  toString, valueOf, plus, minus, times, div, abs, neg,
+  cmp, isNaN, isFinite, isZero, isNeg, isPos,
+  toFixed(10), sqrt, floor, ceil, trunc, round, mod
+
+--- Fuzz progress ---
+fuzz: elapsed: 5s, ops: 19283 (3857/sec), divergences: 0
+fuzz: elapsed: 10s, ops: 29187 (2919/sec), divergences: 0
+fuzz: elapsed: 15s, ops: 38862 (2591/sec), divergences: 0
+fuzz: elapsed: 20s, ops: 49078 (2453/sec), divergences: 0
+fuzz: elapsed: 25s, ops: 59556 (2381/sec), divergences: 0
+fuzz: elapsed: 30s, ops: 71014 (2366/sec), divergences: 0
+fuzz: elapsed: 35s, ops: 81625 (2331/sec), divergences: 0
+fuzz: elapsed: 40s, ops: 93583 (2338/sec), divergences: 0
+fuzz: elapsed: 45s, ops: 130795 (2905/sec), divergences: 0
+fuzz: elapsed: 50s, ops: 167725 (3353/sec), divergences: 0
+fuzz: elapsed: 55s, ops: 204519 (3717/sec), divergences: 0
+
+--- Final Summary ---
+Total input pairs tested: 239645
+Total elapsed:            1m0.001s
+Throughput:               3994 ops/sec
+Divergences:              0
+
+RESULT: PASS — 0 divergences across 239645 differential comparisons in 1m0s

@@ -34,6 +34,8 @@ Thumbs.db
 # Fuzz cache
 fuzz/corpus/
 fuzz/cache/
+fuzz/node_modules/
+fuzz/package-lock.json
 
 # Benchmark output (keep results.json, ignore raw data)
 bench/*.txt

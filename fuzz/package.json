@@ -1,0 +1,9 @@
+{
+  "name": "decimal-go-fuzz-oracle",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node.js oracle for differential fuzzing against original decimal.js",
+  "dependencies": {
+    "decimal.js": "^10.4.3"
+  }
+}

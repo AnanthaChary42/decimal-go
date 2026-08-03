@@ -63,6 +63,22 @@ decimal-go-Port/
 
 All commands can be executed directly from the repo root without changing directories:
 
+### Requirements
+
+- **Go 1.22 or newer** for building and running the Go port and its tests.
+- **Node.js and npm** for the JavaScript differential-fuzz oracle and benchmark preflight.
+- **The original `decimal.js` source checkout** for benchmarks. It must contain both `decimal.js` and its `test/` directory; the npm package alone is not a replacement for this reference checkout.
+
+Install the fuzz oracle dependency once in its existing folder:
+
+```powershell
+cd fuzz
+npm install
+cd ..
+```
+
+The Go package and port tests do not require Node.js or npm.
+
 ### Build Package
 
 ```bash
@@ -79,7 +95,15 @@ make test
 
 ### Run Performance Benchmarks
 
+Benchmarks require Node.js plus the original `decimal.js` repository. On Windows, set `$jsRepository` in `bench/run.ps1`; with GNU Make, pass the checkout using `JS_REPO`:
+
 ```bash
+make bench JS_REPO=/path/to/decimal.js
+```
+
+```bash
+# Direct PowerShell command:
+# powershell -ExecutionPolicy Bypass -File .\bench\run.ps1
 make bench
 ```
 
@@ -88,7 +112,7 @@ make bench
 The differential fuzzer runs the Go port and the original `decimal.js` library side-by-side, feeding identical random inputs to both and comparing outputs across 21 operations (toString, valueOf, plus, minus, times, div, abs, neg, cmp, predicates, toFixed, sqrt, floor, ceil, trunc, round, mod). It uses a Node.js child process as the JS oracle.
 
 ```bash
-# Requires: cd fuzz && npm install (one-time setup for the JS oracle)
+# Requires: Node.js/npm and the one-time setup: cd fuzz && npm install
 go test ./fuzz/... -run TestDifferentialFuzz -timeout 120s -v
 # Override duration: FUZZ_DURATION=90s go test ./fuzz/... -run TestDifferentialFuzz -timeout 120s -v
 ```

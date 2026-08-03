@@ -1,22 +1,22 @@
 {
   "benchmark_name": "decimal.js vs decimal-go (100,000 mixed operations)",
   "workload": "add, sub, mul, div, fixed formatting, decimal-place rounding, whole-number rounding",
-  "measured_at": "2026-08-03T10:52:59.745Z",
+  "measured_at": "2026-08-03T13:02:15.118Z",
   "original_js": {
-    "runtime": "Node.js v24.18.0",
-    "p99_latency_ns": 9300,
-    "rss_kb": 47924,
-    "throughput_ops_sec": 220462.0045860506,
+    "runtime": "Node.js v22.18.0",
+    "p99_latency_ns": 17200,
+    "rss_kb": 49456,
+    "throughput_ops_sec": 181124.47507863067,
     "operations": 100000,
-    "startup_ms": 34.7166
+    "startup_ms": 46.0274
   },
   "port_go": {
     "runtime": "Go go1.26.5",
-    "p99_latency_ns": 8100,
-    "rss_kb": 13200,
-    "throughput_ops_sec": 248631.71750066447,
+    "p99_latency_ns": 10800,
+    "rss_kb": 13116,
+    "throughput_ops_sec": 198666.94480038938,
     "operations": 100000,
-    "startup_ms": 6.2592
+    "startup_ms": 8.9388
   },
   "suite_verification": {
     "status": "passed",
@@ -27,12 +27,12 @@
       "standalone_modules": [
         "powSqrt.js"
       ],
-      "assertions": 32628,
-      "canonical_runner_assertions": 22628,
+      "assertions": 32658,
+      "canonical_runner_assertions": 22658,
       "standalone_assertions": 10000,
       "runner": "test/test.js + test/modules/powSqrt.js",
       "reference_library": "decimal.js 10.6.0",
-      "reference_repository": "D:\\Port Mortem\\decimal.js"
+      "reference_repository": "C:\\Users\\arya1\\OneDrive\\Desktop\\port_motem\\decimal-js\\decimal.js"
     },
     "port_go": {
       "status": "passed",
@@ -43,9 +43,9 @@
     }
   },
   "improvements": {
-    "latency_speedup": "1.15x",
-    "throughput_increase": "1.13x",
-    "memory_reduction_pct": "72.5%",
-    "startup_speedup": "5.55x"
+    "latency_speedup": "1.59x",
+    "throughput_increase": "1.10x",
+    "memory_reduction_pct": "73.5%",
+    "startup_speedup": "5.15x"
   }
 }

@@ -1,16 +1,35 @@
-[CmdletBinding()]
 param(
     [ValidateRange(1, 1000000000)]
-    [int]$Ops = 100000
+    [int]$Ops = 100000,
+    [switch]$Clean
 )
 
 $ErrorActionPreference = 'Stop'
 
 $benchDir = $PSScriptRoot
 $repoRoot = Split-Path -Parent $benchDir
-# Set this to the absolute path of the original decimal.js repository clone.
-# The Go repository path is derived from this script's location.
-$jsRepository = 'C:\Users\Lenovo\projects\port_mortem\decimal.js'
+$parentDir = Split-Path -Parent $repoRoot
+
+# Candidate paths for the original decimal.js repository clone
+$candidatePaths = @(
+    (Join-Path $parentDir 'decimal-js\decimal.js'),
+    (Join-Path $parentDir 'decimal-js'),
+    (Join-Path $parentDir 'decimal.js'),
+    (Join-Path $repoRoot 'decimal-js'),
+    'C:\Users\arya1\OneDrive\Desktop\port_motem\decimal-js\decimal.js'
+)
+
+$jsRepository = $null
+foreach ($candidate in $candidatePaths) {
+    if ((Test-Path -LiteralPath (Join-Path $candidate 'decimal.js')) -and (Test-Path -LiteralPath (Join-Path $candidate 'test'))) {
+        $jsRepository = $candidate
+        break
+    }
+}
+if (-not $jsRepository) {
+    $jsRepository = Join-Path $parentDir 'decimal-js\decimal.js'
+}
+
 $jsDecimal = Join-Path $jsRepository 'decimal.js'
 $jsTests = Join-Path $jsRepository 'test'
 $scriptsDir = Join-Path $benchDir 'scripts'
@@ -39,10 +58,7 @@ if ($Clean) {
     if (Test-Path -LiteralPath $results) {
         Remove-Item -LiteralPath $results -Force
     }
-    & go clean -cache
-    if ($LASTEXITCODE -ne 0) {
-        throw "go clean failed with exit code $LASTEXITCODE"
-    }
+    & go clean -cache 2>$null
 }
 
 foreach ($transientFile in @($aggregateResult, $powSqrtResult, $suiteVerification)) {
@@ -72,7 +88,7 @@ try {
     }
 
     Write-Host '==> Verifying all current decimal-go port tests...'
-    & go test -count=1 ./tests/port
+    & go test -count=1 -timeout 120s ./tests/port
     if ($LASTEXITCODE -ne 0) {
         throw "Go port test suite failed with exit code $LASTEXITCODE"
     }

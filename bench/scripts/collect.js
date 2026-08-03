@@ -75,6 +75,12 @@ function displayNumber(value, fractionDigits = 2) {
 }
 
 async function main() {
+  // Warmup probes to bypass initial process creation / AV scan delay on Windows
+  try {
+    await startupMs(goBin, ['--startup-probe']);
+    await startupMs(process.execPath, [jsBenchmark, '--js-repo', jsRepository, '--startup-probe']);
+  } catch (_) {}
+
   const jsStartup = await startupMs(process.execPath, [jsBenchmark, '--js-repo', jsRepository, '--startup-probe']);
   const goStartup = await startupMs(goBin, ['--startup-probe']);
   const originalJs = await runReport(process.execPath, [jsBenchmark, '--js-repo', jsRepository, '--ops', String(operations)]);

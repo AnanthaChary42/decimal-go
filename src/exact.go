@@ -9,6 +9,26 @@ import "math/big"
 // The word-array division routine is still retained for base conversion. For
 // ordinary decimal division this path avoids losing precision at base-1e7 word
 // boundaries before finalise applies the requested decimal rounding mode.
+var pow10Table [256]*big.Int
+
+func init() {
+	pow10Table[0] = big.NewInt(1)
+	b10 := big.NewInt(10)
+	for i := 1; i < len(pow10Table); i++ {
+		pow10Table[i] = new(big.Int).Mul(pow10Table[i-1], b10)
+	}
+}
+
+func bigPow10(n int) *big.Int {
+	if n >= 0 && n < len(pow10Table) {
+		return new(big.Int).Set(pow10Table[n])
+	}
+	return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(n)), nil)
+}
+
+// divideFiniteExact calculates a finite, non-zero decimal quotient using an
+// integer significand. The decimal exponent is tracked separately, so extreme
+// exponents never require allocating strings of zeros.
 func divideFiniteExact(x, y *Decimal, sign int8, sd int, rm RoundingMode, dp bool, pr int) *Decimal {
 	ctx := x.getContext()
 	xText := digitsToStringExact(x.d)
@@ -55,10 +75,6 @@ func divideFiniteExact(x, y *Decimal, sign int8, sd int, rm RoundingMode, dp boo
 	var quotient, remainder big.Int
 	quotient.QuoRem(&numerator, &denominator, &remainder)
 
-	// The coefficient-array word boundaries depend on e modulo LOG_BASE.
-	// Constructing the integer coefficient and then assigning q.e would violate
-	// that invariant for most exponents. Parse it in exponential form instead
-	// so the parser performs the required base-1e7 alignment.
 	quotientText := quotient.String()
 	quoted := quotientText[:1]
 	if len(quotientText) > 1 {
@@ -67,11 +83,11 @@ func divideFiniteExact(x, y *Decimal, sign int8, sd int, rm RoundingMode, dp boo
 	quoted += "e" + itoa(resultExponent)
 	q, err := ctx.New(quoted)
 	if err != nil {
-		// quotient is constructed from a positive integer, so this is unreachable.
 		panic(err)
 	}
 	q.s = sign
 	q.e = resultExponent
+
 	// The original division algorithm performs a second finalisation when the
 	// requested precision is decimal places rather than significant digits.
 	// DivToInt and Mod use this path with pr == 0; omitting it leaves a
@@ -81,11 +97,4 @@ func divideFiniteExact(x, y *Decimal, sign int8, sd int, rm RoundingMode, dp boo
 		precision = pr + q.e + 1
 	}
 	return finalise(q, precision, rm, remainder.Sign() != 0)
-}
-
-func bigPow10(n int) *big.Int {
-	if n == 0 {
-		return big.NewInt(1)
-	}
-	return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(n)), nil)
 }

@@ -71,9 +71,11 @@ func digitsToStringExact(d []int32) string {
 	return sb.String()
 }
 
+const zeroBuffer = "0000000000000000000000000000000000000000000000000000000000000000"
+
 // i32toa converts an int32 to a string.
 func i32toa(v int32) string {
-	return strings.TrimLeft(itoa(int(v)), " ")
+	return itoa(int(v))
 }
 
 // itoa converts an int to its decimal string representation.
@@ -102,6 +104,12 @@ func itoa(v int) string {
 
 // getZeroString returns a string of k zeros.
 func getZeroString(k int) string {
+	if k <= 0 {
+		return ""
+	}
+	if k <= len(zeroBuffer) {
+		return zeroBuffer[:k]
+	}
 	return strings.Repeat("0", k)
 }
 
